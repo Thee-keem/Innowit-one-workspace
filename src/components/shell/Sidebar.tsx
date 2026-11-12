@@ -77,6 +77,8 @@ export const NAVIGATION_SECTIONS: NavSection[] = [
     items: [
       { id: 'etims-config', label: 'eTIMS Setup', href: '/etims/configuration', icon: ShieldCheck, module: 'ETIMS_COMPLIANCE' },
       { id: 'etims-queue', label: 'Submission Queue', href: '/etims/queue', icon: Building2, module: 'ETIMS_COMPLIANCE' },
+      { id: 'etims-credit-notes', label: 'Credit Notes', href: '/etims/credit-notes', icon: FileText, module: 'ETIMS_COMPLIANCE' },
+      { id: 'etims-reconciliation', label: '3-Way Reconciliation', href: '/etims/reconciliation', icon: CheckSquare, module: 'ETIMS_COMPLIANCE' },
     ],
   },
   {
