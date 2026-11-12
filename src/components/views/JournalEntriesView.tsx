@@ -5,6 +5,9 @@ import {
   CheckCircle2,
   AlertTriangle,
   ShieldCheck,
+  RotateCcw,
+  Search,
+  Filter,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -17,6 +20,7 @@ interface JournalEntriesViewProps {
   entries: JournalEntry[];
   accounts: Account[];
   onAddEntry: (newEntry: JournalEntry) => void;
+  onReverseEntry?: (originalEntryId: string, reversingEntry: JournalEntry) => void;
   userRole: UserRole;
   userFullName: string;
 }
@@ -25,14 +29,17 @@ export function JournalEntriesView({
   entries,
   accounts,
   onAddEntry,
+  onReverseEntry,
   userRole,
   userFullName,
 }: JournalEntriesViewProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<JournalEntry | null>(entries[0] || null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'POSTED' | 'DRAFT' | 'REVERSED'>('ALL');
 
   // New Journal Entry state
-  const [date, setDate] = useState('2026-11-11');
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [reference, setReference] = useState('');
   const [memo, setMemo] = useState('');
   const [lines, setLines] = useState<
@@ -106,6 +113,59 @@ export function JournalEntriesView({
     ]);
   };
 
+  // Reversing Entry workflow per Phase 4 requirements
+  const handleCreateReversal = (entry: JournalEntry) => {
+    if (entry.isReversed) return;
+
+    const revLines: JournalLine[] = entry.lines.map((l, idx) => ({
+      id: `jel_rev_${Date.now()}_${idx}`,
+      accountId: l.accountId,
+      accountNumber: l.accountNumber,
+      accountName: l.accountName,
+      description: `Reversal: ${l.description || entry.memo}`,
+      debit: l.credit,
+      credit: l.debit,
+    }));
+
+    const reversingSeq = `JE-2026-${String(entries.length + 43).padStart(4, '0')}`;
+    const reversingEntry: JournalEntry = {
+      id: `je_${Date.now()}`,
+      entryNumber: reversingSeq,
+      date: new Date().toISOString().slice(0, 10),
+      reference: `REV-${entry.entryNumber}`,
+      memo: `Reversing Entry for ${entry.entryNumber}: ${entry.memo}`,
+      postedBy: `${userFullName} (${userRole})`,
+      status: 'POSTED',
+      lines: revLines,
+      totalDebit: entry.totalCredit,
+      totalCredit: entry.totalDebit,
+      isReversed: false,
+      reversalEntryId: entry.id,
+      sourceModule: 'GENERAL_LEDGER_REVERSAL',
+      sourceId: entry.id,
+    };
+
+    if (onReverseEntry) {
+      onReverseEntry(entry.id, reversingEntry);
+    } else {
+      onAddEntry(reversingEntry);
+    }
+
+    setSelectedEntry(reversingEntry);
+  };
+
+  const filteredEntries = entries.filter((e) => {
+    const matchesSearch =
+      e.entryNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      e.memo.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      e.reference.toLowerCase().includes(searchQuery.toLowerCase());
+
+    if (statusFilter === 'POSTED') return matchesSearch && e.status === 'POSTED' && !e.isReversed;
+    if (statusFilter === 'DRAFT') return matchesSearch && e.status === 'DRAFT';
+    if (statusFilter === 'REVERSED') return matchesSearch && e.isReversed;
+    return matchesSearch;
+  });
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -119,7 +179,7 @@ export function JournalEntriesView({
             <Badge variant="slateBlue">General Ledger</Badge>
           </div>
           <p className="mt-1 text-xs text-[#54657E]">
-            Immutable double-entry debits and credits ledger with General Ledger posting verification.
+            Immutable double-entry debits and credits ledger with atomic balancing and reversing entry audit lineage.
           </p>
         </div>
 
@@ -128,7 +188,7 @@ export function JournalEntriesView({
             variant="primary"
             size="sm"
             onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-1.5 text-xs"
+            className="flex items-center gap-1.5 text-xs font-semibold"
           >
             <Plus size={14} /> New Journal Entry
           </Button>
@@ -139,46 +199,84 @@ export function JournalEntriesView({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Entry List Column */}
         <div className="lg:col-span-5 rounded-xl border border-[#D8E2EC] bg-white overflow-hidden shadow-xs">
-          <div className="p-3.5 border-b border-[#D8E2EC] bg-[#E8EEF5] flex items-center justify-between text-xs">
-            <span className="font-bold text-[#1B2436]">Registered Journal Vouchers</span>
-            <span className="text-[10px] text-[#54657E] font-mono">{entries.length} Entries</span>
+          {/* Search & Status Filters */}
+          <div className="p-3 border-b border-[#D8E2EC] bg-[#E8EEF5] space-y-2">
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#64748B]" />
+              <input
+                type="text"
+                placeholder="Search entry #, reference, or memo..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-lg border border-[#D8E2EC] bg-white pl-8 pr-2.5 py-1 text-xs text-[#0F172A] placeholder-[#64748B] focus:border-[#E03616] focus:outline-none"
+              />
+            </div>
+
+            <div className="flex items-center gap-1 overflow-x-auto text-[10px]">
+              {(['ALL', 'POSTED', 'DRAFT', 'REVERSED'] as const).map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setStatusFilter(st)}
+                  className={`px-2 py-0.5 rounded font-semibold whitespace-nowrap cursor-pointer transition-colors ${
+                    statusFilter === st
+                      ? 'bg-[#1B2436] text-white'
+                      : 'text-[#54657E] hover:bg-[#D8E2EC]'
+                  }`}
+                >
+                  {st}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="divide-y divide-[#D8E2EC] max-h-[600px] overflow-y-auto">
-            {entries.map((entry) => {
-              const isSelected = selectedEntry?.id === entry.id;
-              return (
-                <button
-                  key={entry.id}
-                  onClick={() => setSelectedEntry(entry)}
-                  className={`w-full p-4 text-left transition-colors cursor-pointer ${
-                    isSelected
-                      ? 'bg-[#F0F4F8] border-l-3 border-[#E03616]'
-                      : 'hover:bg-[#F8FAFC]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold text-[#0F172A] text-xs">
-                      {entry.entryNumber}
-                    </span>
-                    <Badge variant={entry.status === 'POSTED' ? 'frost' : 'warning'}>
-                      {entry.status}
-                    </Badge>
-                  </div>
+            {filteredEntries.length === 0 ? (
+              <div className="py-12 text-center text-xs text-[#64748B]">
+                No journal vouchers found matching filter.
+              </div>
+            ) : (
+              filteredEntries.map((entry) => {
+                const isSelected = selectedEntry?.id === entry.id;
+                return (
+                  <button
+                    key={entry.id}
+                    onClick={() => setSelectedEntry(entry)}
+                    className={`w-full p-4 text-left transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'bg-[#F0F4F8] border-l-3 border-[#E03616]'
+                        : 'hover:bg-[#F8FAFC]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-[#0F172A] text-xs">
+                          {entry.entryNumber}
+                        </span>
+                        {entry.isReversed && (
+                          <span className="text-[9px] font-bold font-mono px-1.5 py-0.2 rounded bg-orange-100 text-orange-800">
+                            REVERSED
+                          </span>
+                        )}
+                      </div>
+                      <Badge variant={entry.status === 'POSTED' ? 'frost' : 'warning'}>
+                        {entry.status}
+                      </Badge>
+                    </div>
 
-                  <div className="mt-1 text-xs font-semibold text-[#1B2436] truncate">
-                    {entry.memo}
-                  </div>
+                    <div className="mt-1 text-xs font-semibold text-[#1B2436] truncate">
+                      {entry.memo}
+                    </div>
 
-                  <div className="mt-2 flex items-center justify-between text-[11px] text-[#54657E] font-mono">
-                    <span>{formatDate(entry.date)}</span>
-                    <span className="text-[#0F172A] font-bold tabular-nums">
-                      {formatKES(entry.totalDebit)}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
+                    <div className="mt-2 flex items-center justify-between text-[11px] text-[#54657E] font-mono">
+                      <span>{formatDate(entry.date)}</span>
+                      <span className="text-[#0F172A] font-bold tabular-nums">
+                        {formatKES(entry.totalDebit)}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -195,15 +293,35 @@ export function JournalEntriesView({
                     <Badge variant={selectedEntry.status === 'POSTED' ? 'frost' : 'warning'}>
                       {selectedEntry.status}
                     </Badge>
+                    {selectedEntry.isReversed && (
+                      <span className="px-2 py-0.5 rounded bg-orange-100 text-orange-900 font-mono text-[10px] font-bold">
+                        REVERSED
+                      </span>
+                    )}
                   </div>
                   <p className="mt-1 text-xs text-[#334155]">{selectedEntry.memo}</p>
                 </div>
 
-                <div className="text-right text-xs">
-                  <div className="text-[#64748B]">Reference:</div>
-                  <div className="font-mono font-bold text-[#1B2436]">
-                    {selectedEntry.reference}
+                <div className="flex flex-col items-end gap-2">
+                  <div className="text-right text-xs">
+                    <div className="text-[#64748B]">Reference:</div>
+                    <div className="font-mono font-bold text-[#1B2436]">
+                      {selectedEntry.reference}
+                    </div>
                   </div>
+
+                  {/* Reversing Entry Action Trigger */}
+                  {selectedEntry.status === 'POSTED' && !selectedEntry.isReversed && canPostGL && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleCreateReversal(selectedEntry)}
+                      className="text-xs flex items-center gap-1.5 text-[#E03616] hover:bg-[#E03616]/5 border-[#E03616]/30"
+                      title="Generate atomic reversing entry to cancel this transaction"
+                    >
+                      <RotateCcw size={12} /> Create Reversing Entry
+                    </Button>
+                  )}
                 </div>
               </div>
 

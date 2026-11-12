@@ -19,6 +19,8 @@ import { InventoryView } from '@/components/views/InventoryView';
 import { CollaborationView } from '@/components/views/CollaborationView';
 import { RbacMatrixView } from '@/components/views/RbacMatrixView';
 import { ForbiddenNotice } from '@/components/views/ForbiddenNotice';
+import { InvoicesView } from '@/components/accounting/InvoicesView';
+import { FinancialReportsView } from '@/components/accounting/FinancialReportsView';
 
 import {
   DEFAULT_BRANCHES,
@@ -29,14 +31,18 @@ import {
   DEFAULT_PRODUCTS,
   SEED_USERS,
 } from '@/data/kernel';
+import { SEED_INVOICES } from '@/data/accountingSeed';
 import {
   Branch,
   UserSessionPayload,
   Account,
   JournalEntry,
+  JournalLine,
   EtimsRecord,
   CustomerRecord,
   ProductRecord,
+  InvoiceRecord,
+  PaymentRecord,
   SystemModule,
 } from '@/types';
 import { canViewModule } from '@/modules/auth/rbac';
@@ -59,6 +65,7 @@ export default function App() {
   // Kernel State Stores
   const [accounts, setAccounts] = useState<Account[]>(DEFAULT_ACCOUNTS);
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(DEFAULT_JOURNAL_ENTRIES);
+  const [invoices, setInvoices] = useState<InvoiceRecord[]>(SEED_INVOICES);
   const [etimsRecords, setEtimsRecords] = useState<EtimsRecord[]>(DEFAULT_ETIMS_RECORDS);
   const [customers, setCustomers] = useState<CustomerRecord[]>(DEFAULT_CUSTOMERS);
   const [products, setProducts] = useState<ProductRecord[]>(DEFAULT_PRODUCTS);
@@ -75,7 +82,9 @@ export default function App() {
     if (newEntry.status === 'POSTED') {
       setAccounts((prev) =>
         prev.map((acc) => {
-          const matchingLines = newEntry.lines.filter((l) => l.accountId === acc.id);
+          const matchingLines = newEntry.lines.filter(
+            (l) => l.accountId === acc.id || l.accountNumber === acc.accountNumber
+          );
           if (matchingLines.length === 0) return acc;
 
           let delta = 0;
@@ -90,6 +99,234 @@ export default function App() {
         })
       );
     }
+  };
+
+  const handleReverseJournalEntry = (
+    originalEntryId: string,
+    reversingEntry: JournalEntry
+  ) => {
+    // 1. Mark original entry as reversed and append reversing entry
+    setJournalEntries((prev) => [
+      reversingEntry,
+      ...prev.map((je) =>
+        je.id === originalEntryId
+          ? { ...je, isReversed: true, reversalEntryId: reversingEntry.id }
+          : je
+      ),
+    ]);
+
+    // 2. Adjust account balances by applying reversing entry lines
+    setAccounts((prev) =>
+      prev.map((acc) => {
+        const matchingLines = reversingEntry.lines.filter(
+          (l) => l.accountId === acc.id || l.accountNumber === acc.accountNumber
+        );
+        if (matchingLines.length === 0) return acc;
+
+        let delta = 0;
+        for (const l of matchingLines) {
+          if (acc.type === 'ASSET' || acc.type === 'EXPENSE') {
+            delta += l.debit - l.credit;
+          } else {
+            delta += l.credit - l.debit;
+          }
+        }
+        return { ...acc, balance: acc.balance + delta };
+      })
+    );
+  };
+
+  const handleCreateInvoice = (newInvoice: InvoiceRecord) => {
+    setInvoices((prev) => [newInvoice, ...prev]);
+
+    // Create balanced Double-Entry General Ledger journal entry
+    const entryId = `je_inv_${Date.now()}`;
+    const entryNumber = `JE-INV-${Date.now().toString().slice(-6)}`;
+
+    // Identify GL accounts
+    const arAcc = accounts.find((a) => a.accountNumber === '1200') || accounts[1];
+    const revAcc =
+      accounts.find((a) => a.accountNumber === '4010') ||
+      accounts.find((a) => a.type === 'REVENUE') ||
+      accounts[4];
+    const vatAcc =
+      accounts.find((a) => a.accountNumber === '2020') ||
+      accounts.find((a) => a.accountNumber === '2010') ||
+      accounts[2];
+
+    const lines: JournalLine[] = [
+      {
+        id: `line_${Date.now()}_1`,
+        accountId: arAcc.id,
+        accountNumber: arAcc.accountNumber,
+        accountName: arAcc.name,
+        debit: newInvoice.totalAmount,
+        credit: 0,
+        description: `AR: Invoice ${newInvoice.invoiceNumber} - ${newInvoice.customerName}`,
+      },
+      {
+        id: `line_${Date.now()}_2`,
+        accountId: revAcc.id,
+        accountNumber: revAcc.accountNumber,
+        accountName: revAcc.name,
+        debit: 0,
+        credit: newInvoice.subtotal,
+        description: `Revenue: Invoice ${newInvoice.invoiceNumber}`,
+      },
+      {
+        id: `line_${Date.now()}_3`,
+        accountId: vatAcc.id,
+        accountNumber: vatAcc.accountNumber,
+        accountName: vatAcc.name,
+        debit: 0,
+        credit: newInvoice.taxAmount,
+        description: `VAT 16% Output: Invoice ${newInvoice.invoiceNumber}`,
+      },
+    ];
+
+    const journalEntry: JournalEntry = {
+      id: entryId,
+      entryNumber,
+      date: newInvoice.issueDate,
+      reference: newInvoice.invoiceNumber,
+      memo: `Customer Invoice ${newInvoice.invoiceNumber} - ${newInvoice.customerName}`,
+      status: 'POSTED',
+      postedBy: currentUser.fullName,
+      createdBy: currentUser.fullName,
+      postedAt: new Date().toISOString(),
+      lines,
+      totalDebit: newInvoice.totalAmount,
+      totalCredit: newInvoice.subtotal + newInvoice.taxAmount,
+      sourceModule: 'INVOICING',
+      sourceId: newInvoice.id,
+    };
+
+    setJournalEntries((prev) => [journalEntry, ...prev]);
+
+    // Update account balances
+    setAccounts((prev) =>
+      prev.map((acc) => {
+        if (acc.id === arAcc.id || acc.accountNumber === arAcc.accountNumber) {
+          return { ...acc, balance: acc.balance + newInvoice.totalAmount };
+        }
+        if (acc.id === revAcc.id || acc.accountNumber === revAcc.accountNumber) {
+          return { ...acc, balance: acc.balance + newInvoice.subtotal };
+        }
+        if (acc.id === vatAcc.id || acc.accountNumber === vatAcc.accountNumber) {
+          return { ...acc, balance: acc.balance + newInvoice.taxAmount };
+        }
+        return acc;
+      })
+    );
+
+    // Auto-enqueue to eTIMS queue
+    const etimsRec: EtimsRecord = {
+      id: `etims_${Date.now()}`,
+      invoiceId: newInvoice.id,
+      invoiceNumber: newInvoice.invoiceNumber,
+      customerPin: newInvoice.customerPin || 'P051982736Z',
+      customerName: newInvoice.customerName,
+      buyerName: newInvoice.customerName,
+      cuNumber: `KRA-CU-${Date.now().toString().slice(-8)}`,
+      status: 'PENDING',
+      environment: isSandbox ? 'SANDBOX' : 'PRODUCTION',
+      totalAmountKes: newInvoice.totalAmount,
+      vatAmountKes: newInvoice.taxAmount,
+      totalAmount: newInvoice.totalAmount,
+      taxableAmount: newInvoice.subtotal,
+      taxAmount: newInvoice.taxAmount,
+      transmissionTimestamp: '',
+      retryCount: 0,
+    };
+    setEtimsRecords((prev) => [etimsRec, ...prev]);
+  };
+
+  const handleRecordPayment = (
+    invoiceId: string,
+    payment: PaymentRecord,
+    isFullSettlement: boolean
+  ) => {
+    // Locate target invoice for references
+    const targetInvoice = invoices.find((inv) => inv.id === invoiceId);
+    const invNumber = targetInvoice?.invoiceNumber || payment.invoiceNumber || 'INV';
+    const custName = targetInvoice?.customerName || payment.customerName || 'Customer';
+    const refCode = payment.referenceCode || payment.referenceNumber || 'REF';
+    const pmtDate = payment.date || payment.paymentDate || new Date().toISOString().slice(0, 10);
+
+    // 1. Update invoice
+    setInvoices((prev) =>
+      prev.map((inv) => {
+        if (inv.id !== invoiceId) return inv;
+        const newPaid = inv.paidAmount + payment.amount;
+        const newBalance = Math.max(0, inv.totalAmount - newPaid);
+        const newStatus = isFullSettlement || newBalance <= 0 ? 'PAID' : 'POSTED';
+        return {
+          ...inv,
+          paidAmount: newPaid,
+          balanceDue: newBalance,
+          status: newStatus,
+        };
+      })
+    );
+
+    // 2. Generate balanced cash receipt GL entry
+    // Dr: 1020 Stanbic Bank (Asset +)
+    // Cr: 1200 Accounts Receivable (Asset -)
+    const bankAcc = accounts.find((a) => a.accountNumber === '1020') || accounts[0];
+    const arAcc = accounts.find((a) => a.accountNumber === '1200') || accounts[1];
+
+    const lines: JournalLine[] = [
+      {
+        id: `line_pmt_${Date.now()}_1`,
+        accountId: bankAcc.id,
+        accountNumber: bankAcc.accountNumber,
+        accountName: bankAcc.name,
+        debit: payment.amount,
+        credit: 0,
+        description: `Cash Receipt ${payment.paymentNumber} (${payment.paymentMethod} Ref: ${refCode})`,
+      },
+      {
+        id: `line_pmt_${Date.now()}_2`,
+        accountId: arAcc.id,
+        accountNumber: arAcc.accountNumber,
+        accountName: arAcc.name,
+        debit: 0,
+        credit: payment.amount,
+        description: `AR Settlement: ${invNumber} - ${custName}`,
+      },
+    ];
+
+    const journalEntry: JournalEntry = {
+      id: `je_rcp_${Date.now()}`,
+      entryNumber: `JE-RCP-${Date.now().toString().slice(-6)}`,
+      date: pmtDate,
+      reference: payment.paymentNumber,
+      memo: `Payment Receipt ${payment.paymentNumber} for ${invNumber} (${payment.paymentMethod} Ref: ${refCode})`,
+      status: 'POSTED',
+      postedBy: payment.recordedBy,
+      createdBy: payment.recordedBy,
+      postedAt: new Date().toISOString(),
+      lines,
+      totalDebit: payment.amount,
+      totalCredit: payment.amount,
+      sourceModule: 'AR_PAYMENTS',
+      sourceId: payment.id,
+    };
+
+    setJournalEntries((prev) => [journalEntry, ...prev]);
+
+    // 3. Update account balances: Bank balance increases, AR decreases
+    setAccounts((prev) =>
+      prev.map((acc) => {
+        if (acc.id === bankAcc.id || acc.accountNumber === bankAcc.accountNumber) {
+          return { ...acc, balance: acc.balance + payment.amount };
+        }
+        if (acc.id === arAcc.id || acc.accountNumber === arAcc.accountNumber) {
+          return { ...acc, balance: Math.max(0, acc.balance - payment.amount) };
+        }
+        return acc;
+      })
+    );
   };
 
   const handleAddCustomer = (newCust: CustomerRecord) => {
@@ -152,23 +389,50 @@ export default function App() {
     }
 
     // Chart of Accounts
-    if (currentPath === '/accounting/chart-of-accounts' || currentPath === '/accounting/invoices' || currentPath === '/accounting/reports') {
+    if (currentPath === '/accounting/chart-of-accounts') {
       return (
         <ChartOfAccountsView
           accounts={accounts}
           onAddAccount={handleAddAccount}
           userRole={currentUser.role}
+          journalEntries={journalEntries}
         />
       );
     }
 
-    // Journal Entries
+    // Accounts Receivable & Sales Invoices
+    if (currentPath === '/accounting/invoices') {
+      return (
+        <InvoicesView
+          invoices={invoices}
+          customers={customers}
+          products={products}
+          onCreateInvoice={handleCreateInvoice}
+          onRecordPayment={handleRecordPayment}
+          userRole={currentUser.role}
+          userFullName={currentUser.fullName}
+        />
+      );
+    }
+
+    // Real-Time GAAP Financial Reports (P&L, Balance Sheet, Trial Balance)
+    if (currentPath === '/accounting/reports') {
+      return (
+        <FinancialReportsView
+          accounts={accounts}
+          journalEntries={journalEntries}
+        />
+      );
+    }
+
+    // Journal Entries & Double-Entry General Ledger
     if (currentPath === '/accounting/journal-entries') {
       return (
         <JournalEntriesView
           entries={journalEntries}
           accounts={accounts}
           onAddEntry={handleAddJournalEntry}
+          onReverseEntry={handleReverseJournalEntry}
           userRole={currentUser.role}
           userFullName={currentUser.fullName}
         />
@@ -241,6 +505,7 @@ export default function App() {
         accounts={accounts}
         onAddAccount={handleAddAccount}
         userRole={currentUser.role}
+        journalEntries={journalEntries}
       />
     );
   };

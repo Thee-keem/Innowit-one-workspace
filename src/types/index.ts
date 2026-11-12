@@ -103,19 +103,83 @@ export interface JournalEntry {
   reference: string;
   memo: string;
   postedBy: string;
+  createdBy?: string;
   status: 'DRAFT' | 'POSTED' | 'VOID';
   lines: JournalLine[];
   totalDebit: number;
   totalCredit: number;
+  isReversed?: boolean;
+  reversalEntryId?: string;
+  sourceModule?: string;
+  sourceId?: string;
+  postedAt?: string;
+}
+
+export interface InvoiceLineItem {
+  id: string;
+  productId: string;
+  productName: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  taxRate: number; // e.g. 0.16 = 16%
+  taxClassification: 'STANDARD_16' | 'ZERO_RATED_0' | 'EXEMPT';
+  taxAmount: number;
+  lineTotal: number;
+}
+
+export interface PaymentRecord {
+  id: string;
+  invoiceId: string;
+  invoiceNumber?: string;
+  customerName?: string;
+  paymentNumber: string;
+  date: string;
+  paymentDate?: string;
+  amount: number;
+  paymentMethod: 'M-PESA' | 'BANK_TRANSFER' | 'CHEQUE' | 'CASH';
+  referenceCode: string;
+  referenceNumber?: string;
+  recordedBy: string;
+  notes?: string;
+}
+
+export interface InvoiceRecord {
+  id: string;
+  invoiceNumber: string;
+  customerId: string;
+  customerName: string;
+  customerPin: string;
+  customerAddress?: string;
+  issueDate: string;
+  dueDate: string;
+  paymentTermsDays: number;
+  status: 'DRAFT' | 'POSTED' | 'KRA_ACCEPTED' | 'PAID' | 'OVERDUE';
+  items: InvoiceLineItem[];
+  subtotal: number;
+  taxableAmount?: number;
+  taxAmount: number;
+  totalAmount: number;
+  paidAmount: number;
+  balanceDue: number;
+  kraControlNumber?: string;
+  kraQrPayload?: string;
+  payments: PaymentRecord[];
+  createdAt: string;
 }
 
 export interface EtimsRecord {
   id: string;
+  invoiceId?: string;
   invoiceNumber: string;
   customerName: string;
+  buyerName?: string;
   customerPin: string;
   totalAmountKes: number;
   vatAmountKes: number;
+  totalAmount?: number;
+  taxableAmount?: number;
+  taxAmount?: number;
   environment: 'SANDBOX' | 'PRODUCTION';
   status: 'PENDING' | 'TRANSMITTED' | 'ACCEPTED' | 'FAILED';
   cuNumber: string; // Control Unit Number (e.g. KRAMU1234567890)

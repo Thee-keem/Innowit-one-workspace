@@ -10,24 +10,28 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
-import { Account, AccountType, UserRole } from '@/types';
+import { Account, AccountType, JournalEntry, UserRole } from '@/types';
 import { formatKES } from '@/lib/utils';
 import { hasPermission } from '@/modules/auth/rbac';
+import { AccountLedgerDrawer } from '@/components/accounting/AccountLedgerDrawer';
 
 interface ChartOfAccountsViewProps {
   accounts: Account[];
   onAddAccount: (newAccount: Account) => void;
   userRole: UserRole;
+  journalEntries?: JournalEntry[];
 }
 
 export function ChartOfAccountsView({
   accounts,
   onAddAccount,
   userRole,
+  journalEntries = [],
 }: ChartOfAccountsViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<string>('ALL');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [selectedAccountForDrawer, setSelectedAccountForDrawer] = useState<Account | null>(null);
 
   // New account form state
   const [newAccNumber, setNewAccNumber] = useState('');
@@ -263,16 +267,21 @@ export function ChartOfAccountsView({
                 </tr>
               ) : (
                 filteredAccounts.map((acc) => (
-                  <tr
+                    <tr
                     key={acc.id}
-                    className="hover:bg-[#F8FAFC] transition-colors group"
+                    onClick={() => setSelectedAccountForDrawer(acc)}
+                    className="hover:bg-[#F8FAFC] transition-colors group cursor-pointer"
+                    title="Click to view historical ledger activity"
                   >
                     <td className="py-3 px-4 font-mono font-bold text-[#0F172A] tracking-wider">
                       {acc.accountNumber}
                     </td>
                     <td className="py-3 px-4">
-                      <div className="font-semibold text-[#0F172A] group-hover:text-[#E03616] transition-colors">
-                        {acc.name}
+                      <div className="font-semibold text-[#0F172A] group-hover:text-[#E03616] transition-colors flex items-center justify-between">
+                        <span>{acc.name}</span>
+                        <span className="text-[10px] text-[#54657E] opacity-0 group-hover:opacity-100 transition-opacity font-normal underline">
+                          View Ledger &rarr;
+                        </span>
                       </div>
                       {acc.description && (
                         <div className="text-[11px] text-[#54657E] truncate max-w-lg mt-0.5">
@@ -430,6 +439,14 @@ export function ChartOfAccountsView({
           </div>
         </form>
       </Modal>
+
+      {/* Account Ledger Drawer */}
+      <AccountLedgerDrawer
+        account={selectedAccountForDrawer}
+        isOpen={!!selectedAccountForDrawer}
+        onClose={() => setSelectedAccountForDrawer(null)}
+        journalEntries={journalEntries}
+      />
     </div>
   );
 }

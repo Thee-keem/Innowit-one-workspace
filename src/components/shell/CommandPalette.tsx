@@ -78,7 +78,21 @@ export function CommandPalette({
       path: '/accounting/journal-entries',
       icon: FileText,
       category: 'Accounting',
-      keywords: 'je debits credits double-entry posting gl',
+      keywords: 'je debits credits double-entry posting gl reversing entry audit',
+    },
+    {
+      label: 'Sales Invoices & Accounts Receivable (AR)',
+      path: '/accounting/invoices',
+      icon: Layers,
+      category: 'Accounting',
+      keywords: 'invoices sales ar debtors payments 16 vat etims kra collections aging',
+    },
+    {
+      label: 'Financial Statements (P&L, Balance Sheet, Trial Balance)',
+      path: '/accounting/reports',
+      icon: BarChart3,
+      category: 'Accounting',
+      keywords: 'financial reports balance sheet profit loss pl income statement trial balance gaap',
     },
     {
       label: 'eTIMS Tax Compliance Setup & Keys',
