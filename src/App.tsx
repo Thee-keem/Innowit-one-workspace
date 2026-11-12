@@ -5,7 +5,7 @@
  * @license Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Sidebar } from '@/components/shell/Sidebar';
 import { TopBar } from '@/components/shell/TopBar';
 import { CommandPalette } from '@/components/shell/CommandPalette';
@@ -23,7 +23,20 @@ import { InvoicesView } from '@/components/accounting/InvoicesView';
 import { FinancialReportsView } from '@/components/accounting/FinancialReportsView';
 import { ProcurementView } from '@/components/views/ProcurementView';
 import { HrPayrollView } from '@/components/views/HrPayrollView';
+import { ExecutiveBiView } from '@/components/views/ExecutiveBiView';
+import { WorkflowAutomationsView } from '@/components/views/WorkflowAutomationsView';
+import { AuditLogsView } from '@/components/views/AuditLogsView';
 import { loadErpState, saveErpState, ErpState } from '@/modules/erp/store';
+import { loadCrmState } from '@/modules/crm/store';
+import { loadAuditLogs, logAuditEntry } from '@/modules/audit/store';
+import {
+  loadAutomationRules,
+  saveAutomationRules,
+  loadAutomationLogs,
+  loadNotifications,
+  saveNotifications,
+  executeAutomationsEngine,
+} from '@/modules/automation/store';
 
 import {
   DEFAULT_BRANCHES,
@@ -68,6 +81,10 @@ import {
   EtimsQueueItem,
   EtimsConfigurationRecord,
   CreditNoteRecord,
+  AuditLogRecord,
+  AutomationRule,
+  AutomationExecutionLog,
+  SystemNotification,
 } from '@/types';
 import { canViewModule } from '@/modules/auth/rbac';
 
@@ -110,9 +127,92 @@ export default function App() {
     });
   };
 
+  // Phase 7: Business Intelligence, Automation & System Services
+  const [auditLogs, setAuditLogs] = useState<AuditLogRecord[]>(() => loadAuditLogs());
+  const [automationRules, setAutomationRules] = useState<AutomationRule[]>(() => loadAutomationRules());
+  const [automationLogs, setAutomationLogs] = useState<AutomationExecutionLog[]>(() => loadAutomationLogs());
+  const [notifications, setNotifications] = useState<SystemNotification[]>(() => loadNotifications());
+  const crmState = useMemo(() => loadCrmState(), []);
+
+  // Phase 7 Automation & Event Bus Handlers
+  const handleRunAutomations = () => {
+    const result = executeAutomationsEngine({
+      products,
+      invoices,
+      deals: crmState.deals,
+      purchaseOrders: erpState.purchaseOrders,
+      etimsQueue,
+      payrollRuns: erpState.payrollRuns,
+      currentUser,
+    });
+    setAutomationLogs(result.logs);
+    setNotifications(result.newNotifications);
+    setAuditLogs(loadAuditLogs());
+  };
+
+  const handleToggleRule = (ruleId: string) => {
+    setAutomationRules((prev) => {
+      const updated = prev.map((r) =>
+        r.id === ruleId ? { ...r, isActive: !r.isActive } : r
+      );
+      saveAutomationRules(updated);
+
+      const target = updated.find((r) => r.id === ruleId);
+      logAuditEntry({
+        userId: currentUser.userId,
+        userFullName: currentUser.fullName,
+        userRole: currentUser.role,
+        action: 'UPDATE',
+        entityType: 'AutomationRule',
+        entityId: ruleId,
+        entityName: target?.name,
+        changes: { isActive: target?.isActive },
+      });
+      setAuditLogs(loadAuditLogs());
+      return updated;
+    });
+  };
+
+  const handleCreateRule = (newRule: AutomationRule) => {
+    setAutomationRules((prev) => {
+      const updated = [newRule, ...prev];
+      saveAutomationRules(updated);
+
+      logAuditEntry({
+        userId: currentUser.userId,
+        userFullName: currentUser.fullName,
+        userRole: currentUser.role,
+        action: 'CREATE',
+        entityType: 'AutomationRule',
+        entityId: newRule.id,
+        entityName: newRule.name,
+        changes: { initial: newRule },
+      });
+      setAuditLogs(loadAuditLogs());
+      return updated;
+    });
+  };
+
+  const handleClearNotifications = () => {
+    const updated = notifications.map((n) => ({ ...n, read: true }));
+    setNotifications(updated);
+    saveNotifications(updated);
+  };
+
   // Handlers for state updates
   const handleAddAccount = (newAcc: Account) => {
     setAccounts((prev) => [newAcc, ...prev]);
+    logAuditEntry({
+      userId: currentUser.userId,
+      userFullName: currentUser.fullName,
+      userRole: currentUser.role,
+      action: 'CREATE',
+      entityType: 'Account',
+      entityId: newAcc.id,
+      entityName: `${newAcc.accountNumber} - ${newAcc.name}`,
+      changes: { account: newAcc },
+    });
+    setAuditLogs(loadAuditLogs());
   };
 
   const handlePostStockAdjustment = (
@@ -995,6 +1095,51 @@ export default function App() {
       );
     }
 
+    // Phase 7: Executive Business Intelligence & Operational Analytics
+    if (currentPath === '/bi/executive') {
+      return (
+        <ExecutiveBiView
+          accounts={accounts}
+          journalEntries={journalEntries}
+          invoices={invoices}
+          products={products}
+          customers={customers}
+          deals={crmState.deals}
+          suppliers={erpState.suppliers}
+          supplierBills={erpState.supplierBills}
+          employees={erpState.employees}
+          userRole={currentUser.role}
+          userFullName={currentUser.fullName}
+        />
+      );
+    }
+
+    // Phase 7: Event-Driven Workflow Automations
+    if (currentPath === '/bi/automations') {
+      return (
+        <WorkflowAutomationsView
+          rules={automationRules}
+          logs={automationLogs}
+          onToggleRule={handleToggleRule}
+          onRunEngine={handleRunAutomations}
+          onCreateRule={handleCreateRule}
+          userRole={currentUser.role}
+          userFullName={currentUser.fullName}
+        />
+      );
+    }
+
+    // Phase 7: Immutable System Audit Trail Explorer
+    if (currentPath === '/system/audit-logs') {
+      return (
+        <AuditLogsView
+          logs={auditLogs}
+          userRole={currentUser.role}
+          userFullName={currentUser.fullName}
+        />
+      );
+    }
+
     // 12-Role RBAC Matrix
     if (currentPath === '/system/rbac') {
       return (
@@ -1038,6 +1183,9 @@ export default function App() {
           isSandbox={isSandbox}
           onToggleSandbox={() => setIsSandbox(!isSandbox)}
           currentUser={currentUser}
+          notifications={notifications}
+          onNotificationClick={(href) => href && setCurrentPath(href)}
+          onClearNotifications={handleClearNotifications}
         />
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#F0F4F8]">
@@ -1051,6 +1199,12 @@ export default function App() {
         onClose={() => setIsCommandPaletteOpen(false)}
         onNavigate={(path: string) => setCurrentPath(path)}
         onOpenRoleSwitcher={() => setIsRoleSwitcherOpen(true)}
+        customers={customers}
+        invoices={invoices}
+        products={products}
+        employees={erpState.employees}
+        deals={crmState.deals}
+        onTriggerAutomations={handleRunAutomations}
       />
 
       {/* 12-Role RBAC Simulation Engine Modal */}

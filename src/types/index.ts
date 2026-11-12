@@ -823,3 +823,111 @@ export interface ErpProjectRecord {
   status: 'PLANNING' | 'ACTIVE' | 'ON_HOLD' | 'COMPLETED';
 }
 
+// ============================================================================
+// PHASE 7: BUSINESS INTELLIGENCE, AUTOMATION & SYSTEM AUDIT SERVICES
+// ============================================================================
+
+export interface AuditLogRecord {
+  id: string;
+  userId: string;
+  userFullName: string;
+  userRole: UserRole;
+  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'POST' | 'POST_GL' | 'APPROVE' | 'TRANSMIT_TAX' | 'TRIGGER_AUTOMATION';
+  entityType:
+    | 'Customer'
+    | 'SalesInvoice'
+    | 'JournalEntry'
+    | 'Payment'
+    | 'Product'
+    | 'StockMovement'
+    | 'PurchaseOrder'
+    | 'GoodsReceipt'
+    | 'Supplier'
+    | 'PayrollRun'
+    | 'CreditNote'
+    | 'AutomationRule'
+    | 'EtimsConfiguration'
+    | 'FixedAsset'
+    | 'Account';
+  entityId: string;
+  entityName?: string;
+  changesJson?: string; // stringified { before?: Record<string, any>; after?: Record<string, any>; reason?: string }
+  ipAddress?: string;
+  timestamp: string;
+}
+
+export type AutomationTrigger =
+  | 'STOCK_BELOW_REORDER'
+  | 'INVOICE_OVERDUE_15D'
+  | 'DEAL_MOVED_NEGOTIATION'
+  | 'PO_AWAITING_APPROVAL'
+  | 'ETIMS_TRANSMISSION_FAILED'
+  | 'PAYROLL_PENDING_APPROVAL';
+
+export type AutomationActionType =
+  | 'IN_APP_NOTIFICATION'
+  | 'EMAIL_DISPATCH'
+  | 'DRAFT_PURCHASE_REQUISITION'
+  | 'FLAG_HIGH_PRIORITY_TASK'
+  | 'ESCALATE_TO_EXECUTIVE';
+
+export interface AutomationCondition {
+  field: string;
+  operator: 'EQUALS' | 'NOT_EQUALS' | 'GREATER_THAN' | 'LESS_THAN' | 'LESS_EQUAL' | 'CONTAINS';
+  value: string | number;
+}
+
+export interface AutomationRule {
+  id: string;
+  name: string;
+  description: string;
+  trigger: AutomationTrigger;
+  triggerLabel: string;
+  conditions: AutomationCondition[];
+  actionType: AutomationActionType;
+  actionLabel: string;
+  targetRole: UserRole | 'ALL';
+  isActive: boolean;
+  lastExecutedAt?: string;
+  executionCount: number;
+}
+
+export interface AutomationExecutionLog {
+  id: string;
+  ruleId: string;
+  ruleName: string;
+  trigger: AutomationTrigger;
+  executedAt: string;
+  executedBy: string; // 'SYSTEM_TRIGGER' or User Name
+  status: 'SUCCESS' | 'WARNING' | 'SKIPPED' | 'FAILED';
+  matchedEntityCount: number;
+  details: string;
+  actionSummary: string;
+}
+
+export interface SystemNotification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'INFO' | 'WARNING' | 'ALERT' | 'SUCCESS';
+  source: 'AUTOMATION' | 'ETIMS' | 'FINANCE' | 'SYSTEM';
+  timestamp: string;
+  read: boolean;
+  linkHref?: string;
+}
+
+export type BiDateRange = 'TODAY' | 'THIS_MONTH' | 'THIS_QUARTER' | 'THIS_YEAR' | 'ALL_TIME';
+
+export interface ExecutiveBiMetrics {
+  cashRunwayMonths: number;
+  workingCapitalKes: number;
+  grossMarginPct: number;
+  netMarginPct: number;
+  totalInventoryValuationKes: number;
+  totalArKes: number;
+  totalApKes: number;
+  monthlyRevenueKes: number;
+  monthlyOperatingCostKes: number;
+  netOperatingIncomeKes: number;
+}
+
