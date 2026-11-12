@@ -11,6 +11,9 @@ import {
   Sparkles,
   BarChart3,
   Briefcase,
+  ShoppingCart,
+  RotateCcw,
+  FileCheck,
 } from 'lucide-react';
 
 interface CommandPaletteProps {
@@ -109,6 +112,20 @@ export function CommandPalette({
       keywords: 'outbox transmissions receipt cu numbers retry status',
     },
     {
+      label: 'eTIMS Credit Notes & Reversals',
+      path: '/etims/credit-notes',
+      icon: RotateCcw,
+      category: 'Compliance',
+      keywords: 'credit note reversal kra control number cn returns warranty price discount',
+    },
+    {
+      label: 'eTIMS 3-Way Reconciliation Audit',
+      path: '/etims/reconciliation',
+      icon: FileCheck,
+      category: 'Compliance',
+      keywords: 'reconciliation audit 3-way erp outbox kra ack discrepancy match export',
+    },
+    {
       label: 'CRM Intelligence Dashboard & Forecasts',
       path: '/crm/dashboard',
       icon: BarChart3,
@@ -137,11 +154,25 @@ export function CommandPalette({
       keywords: 'tasks activities followups due dates priority urgent overdue crm',
     },
     {
-      label: 'Inventory & Stock Valuation',
+      label: 'Inventory & Multi-Warehouse Stock',
       path: '/inventory/products',
       icon: Package,
       category: 'Operations',
-      keywords: 'products sku stock warehouse units reorder',
+      keywords: 'products sku stock warehouse units reorder bins transfers adjustment movements assets',
+    },
+    {
+      label: 'Procurement & Purchase Orders (PO)',
+      path: '/procurement/purchase-orders',
+      icon: ShoppingCart,
+      category: 'Operations',
+      keywords: 'procurement purchase orders pos suppliers grn vendor goods receipt bills',
+    },
+    {
+      label: 'HR & Statutory Kenyan Payroll Engine',
+      path: '/hr/payroll',
+      icon: Users,
+      category: 'Operations',
+      keywords: 'hr payroll paye nssf shif nhif housing levy kra employees payslips attendance leave salaries',
     },
     {
       label: '12-Role RBAC Governance Matrix',

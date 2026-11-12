@@ -21,6 +21,9 @@ import { RbacMatrixView } from '@/components/views/RbacMatrixView';
 import { ForbiddenNotice } from '@/components/views/ForbiddenNotice';
 import { InvoicesView } from '@/components/accounting/InvoicesView';
 import { FinancialReportsView } from '@/components/accounting/FinancialReportsView';
+import { ProcurementView } from '@/components/views/ProcurementView';
+import { HrPayrollView } from '@/components/views/HrPayrollView';
+import { loadErpState, saveErpState, ErpState } from '@/modules/erp/store';
 
 import {
   DEFAULT_BRANCHES,
@@ -33,6 +36,13 @@ import {
 } from '@/data/kernel';
 import { SEED_INVOICES } from '@/data/accountingSeed';
 import {
+  DEFAULT_ETIMS_CONFIG,
+  SEED_ETIMS_QUEUE,
+  SEED_CREDIT_NOTES,
+  serializeKraEtimsPayload,
+  serializeKraResponse,
+} from '@/data/etimsSeed';
+import {
   Branch,
   UserSessionPayload,
   Account,
@@ -44,6 +54,20 @@ import {
   InvoiceRecord,
   PaymentRecord,
   SystemModule,
+  WarehouseRecord,
+  StockMovementRecord,
+  FixedAssetRecord,
+  PurchaseOrderRecord,
+  GoodsReceiptNoteRecord,
+  SupplierRecord,
+  SupplierBillRecord,
+  SalesOrderRecord,
+  PayrollRunRecord,
+  EmployeeRecord,
+  LeaveRequestRecord,
+  EtimsQueueItem,
+  EtimsConfigurationRecord,
+  CreditNoteRecord,
 } from '@/types';
 import { canViewModule } from '@/modules/auth/rbac';
 
@@ -70,9 +94,174 @@ export default function App() {
   const [customers, setCustomers] = useState<CustomerRecord[]>(DEFAULT_CUSTOMERS);
   const [products, setProducts] = useState<ProductRecord[]>(DEFAULT_PRODUCTS);
 
+  // eTIMS Compliance Engine State (Phase 6)
+  const [etimsConfig, setEtimsConfig] = useState<EtimsConfigurationRecord>(DEFAULT_ETIMS_CONFIG);
+  const [etimsQueue, setEtimsQueue] = useState<EtimsQueueItem[]>(SEED_ETIMS_QUEUE);
+  const [creditNotes, setCreditNotes] = useState<CreditNoteRecord[]>(SEED_CREDIT_NOTES);
+
+  // ERP Operations State (Phase 5)
+  const [erpState, setErpState] = useState<ErpState>(() => loadErpState());
+
+  const updateErpState = (updater: (prev: ErpState) => ErpState) => {
+    setErpState((prev) => {
+      const updated = updater(prev);
+      saveErpState(updated);
+      return updated;
+    });
+  };
+
   // Handlers for state updates
   const handleAddAccount = (newAcc: Account) => {
     setAccounts((prev) => [newAcc, ...prev]);
+  };
+
+  const handlePostStockAdjustment = (
+    movement: StockMovementRecord,
+    journalEntry: JournalEntry,
+    updatedProduct: ProductRecord
+  ) => {
+    // 1. Append immutable stock movement
+    updateErpState((prev) => ({
+      ...prev,
+      stockMovements: [movement, ...prev.stockMovements],
+    }));
+
+    // 2. Post balancing GL journal entry
+    handleAddJournalEntry(journalEntry);
+
+    // 3. Update product catalog stock
+    setProducts((prev) =>
+      prev.map((p) => (p.id === updatedProduct.id ? updatedProduct : p))
+    );
+  };
+
+  const handleTransferStock = (movements: StockMovementRecord[]) => {
+    updateErpState((prev) => ({
+      ...prev,
+      stockMovements: [...movements, ...prev.stockMovements],
+    }));
+  };
+
+  const handleAddAsset = (asset: FixedAssetRecord) => {
+    updateErpState((prev) => ({
+      ...prev,
+      fixedAssets: [asset, ...prev.fixedAssets],
+    }));
+  };
+
+  const handleApprovePO = (poId: string) => {
+    const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 16);
+    updateErpState((prev) => ({
+      ...prev,
+      purchaseOrders: prev.purchaseOrders.map((po) =>
+        po.id === poId
+          ? {
+              ...po,
+              status: 'APPROVED',
+              approvedBy: `${currentUser.fullName} (${currentUser.role})`,
+              approvedAt: timestamp,
+            }
+          : po
+      ),
+    }));
+  };
+
+  const handleCreatePO = (po: PurchaseOrderRecord) => {
+    updateErpState((prev) => ({
+      ...prev,
+      purchaseOrders: [po, ...prev.purchaseOrders],
+    }));
+  };
+
+  const handleConfirmReceipt = (
+    grn: GoodsReceiptNoteRecord,
+    movements: StockMovementRecord[],
+    updatedProducts: ProductRecord[],
+    bill?: SupplierBillRecord,
+    journalEntry?: JournalEntry
+  ) => {
+    // 1. Save GRN & Stock Movements
+    updateErpState((prev) => ({
+      ...prev,
+      goodsReceiptNotes: [grn, ...prev.goodsReceiptNotes],
+      stockMovements: [...movements, ...prev.stockMovements],
+      supplierBills: bill ? [bill, ...prev.supplierBills] : prev.supplierBills,
+      purchaseOrders: prev.purchaseOrders.map((po) =>
+        po.id === grn.poId ? { ...po, status: 'RECEIVED' } : po
+      ),
+    }));
+
+    // 2. Update product stock on hand
+    setProducts(updatedProducts);
+
+    // 3. Post atomic balanced AP journal entry if bill generated
+    if (journalEntry) {
+      handleAddJournalEntry(journalEntry);
+    }
+  };
+
+  const handleCreateSalesOrder = (so: SalesOrderRecord) => {
+    updateErpState((prev) => ({
+      ...prev,
+      salesOrders: [so, ...prev.salesOrders],
+    }));
+  };
+
+  const handleAddSupplier = (supplier: SupplierRecord) => {
+    updateErpState((prev) => ({
+      ...prev,
+      suppliers: [supplier, ...prev.suppliers],
+    }));
+  };
+
+  const handleCreatePayrollRun = (run: PayrollRunRecord) => {
+    updateErpState((prev) => ({
+      ...prev,
+      payrollRuns: [run, ...prev.payrollRuns],
+    }));
+  };
+
+  const handlePostPayrollToGl = (runId: string, journalEntry: JournalEntry) => {
+    // 1. Post balanced GL journal entry
+    handleAddJournalEntry(journalEntry);
+
+    // 2. Mark payroll run as POSTED_TO_GL
+    updateErpState((prev) => ({
+      ...prev,
+      payrollRuns: prev.payrollRuns.map((r) =>
+        r.id === runId
+          ? { ...r, status: 'POSTED_TO_GL', journalEntryId: journalEntry.id }
+          : r
+      ),
+    }));
+  };
+
+  const handleAddEmployee = (emp: EmployeeRecord) => {
+    updateErpState((prev) => ({
+      ...prev,
+      employees: [emp, ...prev.employees],
+    }));
+  };
+
+  const handleSubmitLeave = (req: LeaveRequestRecord) => {
+    updateErpState((prev) => ({
+      ...prev,
+      leaveRequests: [req, ...prev.leaveRequests],
+    }));
+  };
+
+  const handleUpdateLeaveStatus = (
+    leaveId: string,
+    status: 'APPROVED' | 'REJECTED'
+  ) => {
+    updateErpState((prev) => ({
+      ...prev,
+      leaveRequests: prev.leaveRequests.map((l) =>
+        l.id === leaveId
+          ? { ...l, status, approvedBy: currentUser.fullName }
+          : l
+      ),
+    }));
   };
 
   const handleAddJournalEntry = (newEntry: JournalEntry) => {
@@ -219,7 +408,8 @@ export default function App() {
       })
     );
 
-    // Auto-enqueue to eTIMS queue
+    // Auto-enqueue to eTIMS records & transmission queue
+    const cuNumber = `KRAMU010049${Date.now().toString().slice(-4)}`;
     const etimsRec: EtimsRecord = {
       id: `etims_${Date.now()}`,
       invoiceId: newInvoice.id,
@@ -227,7 +417,7 @@ export default function App() {
       customerPin: newInvoice.customerPin || 'P051982736Z',
       customerName: newInvoice.customerName,
       buyerName: newInvoice.customerName,
-      cuNumber: `KRA-CU-${Date.now().toString().slice(-8)}`,
+      cuNumber,
       status: 'PENDING',
       environment: isSandbox ? 'SANDBOX' : 'PRODUCTION',
       totalAmountKes: newInvoice.totalAmount,
@@ -239,6 +429,36 @@ export default function App() {
       retryCount: 0,
     };
     setEtimsRecords((prev) => [etimsRec, ...prev]);
+
+    const queueItem: EtimsQueueItem = {
+      id: `queue_${Date.now()}`,
+      invoiceId: newInvoice.id,
+      invoiceNumber: newInvoice.invoiceNumber,
+      customerName: newInvoice.customerName,
+      customerPin: newInvoice.customerPin || 'P051982736Z',
+      idempotencyKey:
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `idemp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      mode: etimsConfig.mode,
+      environment: isSandbox ? 'SANDBOX' : 'PRODUCTION',
+      status: 'PENDING',
+      totalAmountKes: newInvoice.totalAmount,
+      vatAmountKes: newInvoice.taxAmount,
+      cuNumber,
+      attemptCount: 0,
+      payloadJson: serializeKraEtimsPayload({
+        invoiceNumber: newInvoice.invoiceNumber,
+        customerPin: newInvoice.customerPin || 'P051982736Z',
+        customerName: newInvoice.customerName,
+        issueDate: newInvoice.issueDate,
+        subtotal: newInvoice.subtotal,
+        taxAmount: newInvoice.taxAmount,
+        totalAmount: newInvoice.totalAmount,
+        items: newInvoice.items,
+      }),
+    };
+    setEtimsQueue((prev) => [queueItem, ...prev]);
   };
 
   const handleRecordPayment = (
@@ -337,12 +557,88 @@ export default function App() {
     setProducts((prev) => [newProd, ...prev]);
   };
 
-  const handleTransmitEtimsQueue = () => {
+  const handleRetryQueueItem = (itemId: string) => {
+    const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const controlNo = `KRA2026${Date.now().toString().slice(-7)}`;
+    const signature = `SIG-${Math.random().toString(36).substring(2, 10).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+    let updatedInvNumber = '';
+    let updatedCuNumber = '';
+
+    setEtimsQueue((prev) =>
+      prev.map((item) => {
+        if (item.id === itemId) {
+          updatedInvNumber = item.invoiceNumber;
+          updatedCuNumber = item.cuNumber || 'KRAMU010049';
+          const resp = serializeKraResponse(item.invoiceNumber, updatedCuNumber, item.totalAmountKes);
+          return {
+            ...item,
+            status: 'ACCEPTED',
+            attemptCount: item.attemptCount + 1,
+            transmissionTimestamp: timestamp,
+            kraControlNumber: controlNo,
+            internalSignature: signature,
+            qrPayload: `https://itax.kra.go.ke/verify?cu=${item.cuNumber}&inv=${item.invoiceNumber}&tot=${item.totalAmountKes}&sign=${signature}`,
+            responseJson: resp,
+            lastError: undefined,
+            nextRetryAt: undefined,
+          };
+        }
+        return item;
+      })
+    );
+
     setEtimsRecords((prev) =>
       prev.map((rec) => {
-        if (rec.status === 'PENDING') {
-          const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
-          const receiptNumber = `KRA${Date.now().toString().slice(-13)}`;
+        if (rec.invoiceNumber === updatedInvNumber || rec.cuNumber === updatedCuNumber) {
+          return {
+            ...rec,
+            status: 'ACCEPTED',
+            transmissionTimestamp: timestamp,
+            kraReceiptNumber: controlNo,
+            verificationUrl: `https://itax.kra.go.ke/KRA-Portal/invoiceConfirmation.htm?cu=${rec.cuNumber}`,
+            qrPayload: `https://itax.kra.go.ke/verify?cu=${rec.cuNumber}&receipt=${controlNo}`,
+          };
+        }
+        return rec;
+      })
+    );
+  };
+
+  const handleTransmitEtimsQueue = () => {
+    const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const generatedMap = new Map<string, { controlNo: string; signature: string }>();
+
+    setEtimsQueue((prev) =>
+      prev.map((item) => {
+        if (item.status === 'PENDING' || item.status === 'RETRY_SCHEDULED' || item.status === 'FAILED') {
+          const controlNo = `KRA2026${Date.now().toString().slice(-7)}${Math.floor(Math.random() * 90 + 10)}`;
+          const signature = `SIG-${Math.random().toString(36).substring(2, 10).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+          generatedMap.set(item.invoiceNumber, { controlNo, signature });
+
+          const resp = serializeKraResponse(item.invoiceNumber, item.cuNumber || 'KRAMU010049', item.totalAmountKes);
+          return {
+            ...item,
+            status: 'ACCEPTED',
+            attemptCount: item.attemptCount + 1,
+            transmissionTimestamp: timestamp,
+            kraControlNumber: controlNo,
+            internalSignature: signature,
+            qrPayload: `https://itax.kra.go.ke/verify?cu=${item.cuNumber}&inv=${item.invoiceNumber}&tot=${item.totalAmountKes}&sign=${signature}`,
+            responseJson: resp,
+            lastError: undefined,
+            nextRetryAt: undefined,
+          };
+        }
+        return item;
+      })
+    );
+
+    setEtimsRecords((prev) =>
+      prev.map((rec) => {
+        if (rec.status === 'PENDING' || rec.status === 'FAILED') {
+          const gen = generatedMap.get(rec.invoiceNumber);
+          const receiptNumber = gen?.controlNo || `KRA2026${Date.now().toString().slice(-7)}`;
           return {
             ...rec,
             status: 'ACCEPTED',
@@ -355,6 +651,141 @@ export default function App() {
         return rec;
       })
     );
+  };
+
+  const handleUpdateEtimsConfig = (newConfig: EtimsConfigurationRecord) => {
+    setEtimsConfig(newConfig);
+    if (newConfig.environment === 'PRODUCTION' && newConfig.isProductionActive) {
+      setIsSandbox(false);
+    } else if (newConfig.environment === 'SANDBOX') {
+      setIsSandbox(true);
+    }
+  };
+
+  const handleCreateCreditNote = (
+    creditNote: CreditNoteRecord,
+    reversingJournal: JournalEntry,
+    restoredStockMovements: StockMovementRecord[]
+  ) => {
+    // 1. Append credit note
+    setCreditNotes((prev) => [creditNote, ...prev]);
+
+    // 2. Post reversing GL entry
+    handleAddJournalEntry(reversingJournal);
+
+    // 3. Update target invoice status and balance if applicable
+    setInvoices((prev) =>
+      prev.map((inv) => {
+        if (inv.id === creditNote.originalInvoiceId || inv.invoiceNumber === creditNote.originalInvoiceNumber) {
+          const newBal = Math.max(0, inv.balanceDue - creditNote.totalAmountKes);
+          return {
+            ...inv,
+            balanceDue: newBal,
+            status: newBal === 0 ? 'VOID' : inv.status,
+          };
+        }
+        return inv;
+      })
+    );
+
+    // 4. Restore physical inventory if returned
+    if (restoredStockMovements && restoredStockMovements.length > 0) {
+      updateErpState((prev) => ({
+        ...prev,
+        stockMovements: [...restoredStockMovements, ...prev.stockMovements],
+      }));
+
+      // Adjust product catalog stock quantities
+      for (const m of restoredStockMovements) {
+        setProducts((prev) =>
+          prev.map((p) =>
+            p.id === m.productId
+              ? {
+                  ...p,
+                  stockOnHand: p.stockOnHand + m.quantity,
+                }
+              : p
+          )
+        );
+      }
+    }
+
+    // 5. Enqueue Credit Note to eTIMS queue & compliance outbox
+    const cnPayload = {
+      taxpayerInfo: {
+        tin: etimsConfig.kraPin,
+        bhfId: etimsConfig.branchCode,
+        dvcSrlNo: etimsConfig.deviceSerial,
+      },
+      custInfo: {
+        custTin: creditNote.customerPin,
+        custNm: creditNote.customerName,
+        prcType: '1',
+      },
+      trdInvcNo: creditNote.creditNoteNumber,
+      orgInvcNo: creditNote.originalInvoiceNumber,
+      orgRcptNo: creditNote.originalKraControlNumber,
+      invcType: '2', // 2=Credit Note
+      pmtTyCd: '01',
+      cfrmDate: `${new Date().toISOString().slice(0, 10)} 12:00:00`,
+      totItemCnt: creditNote.items.length,
+      taxblAmtA: creditNote.subtotalKes,
+      taxAmtA: creditNote.taxAmountKes,
+      totTaxblAmt: creditNote.subtotalKes,
+      totTaxAmt: creditNote.taxAmountKes,
+      totAmt: creditNote.totalAmountKes,
+      rsnCd: creditNote.reasonCode,
+      rsnNotes: creditNote.reasonNotes,
+    };
+
+    const cnQueueItem: EtimsQueueItem = {
+      id: `queue_${Date.now()}`,
+      invoiceId: creditNote.id,
+      invoiceNumber: creditNote.creditNoteNumber,
+      customerName: creditNote.customerName,
+      customerPin: creditNote.customerPin,
+      idempotencyKey:
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `idemp-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      mode: etimsConfig.mode,
+      environment: isSandbox ? 'SANDBOX' : 'PRODUCTION',
+      status: 'ACCEPTED',
+      totalAmountKes: creditNote.totalAmountKes,
+      vatAmountKes: creditNote.taxAmountKes,
+      cuNumber: creditNote.cuNumber,
+      kraControlNumber: creditNote.kraControlNumber,
+      internalSignature: `SIG-CN-${Date.now().toString().slice(-6)}`,
+      qrPayload: `https://itax.kra.go.ke/verify?cu=${creditNote.cuNumber}&cn=${creditNote.creditNoteNumber}&tot=${creditNote.totalAmountKes}`,
+      attemptCount: 1,
+      transmissionTimestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      payloadJson: JSON.stringify(cnPayload, null, 2),
+      responseJson: serializeKraResponse(creditNote.creditNoteNumber, creditNote.cuNumber, creditNote.totalAmountKes),
+    };
+    setEtimsQueue((prev) => [cnQueueItem, ...prev]);
+
+    const cnEtimsRec: EtimsRecord = {
+      id: `etims_cn_${Date.now()}`,
+      invoiceId: creditNote.id,
+      invoiceNumber: creditNote.creditNoteNumber,
+      customerPin: creditNote.customerPin,
+      customerName: creditNote.customerName,
+      buyerName: creditNote.customerName,
+      cuNumber: creditNote.cuNumber,
+      status: 'ACCEPTED',
+      environment: isSandbox ? 'SANDBOX' : 'PRODUCTION',
+      totalAmountKes: creditNote.totalAmountKes,
+      vatAmountKes: creditNote.taxAmountKes,
+      totalAmount: creditNote.totalAmountKes,
+      taxableAmount: creditNote.subtotalKes,
+      taxAmount: creditNote.taxAmountKes,
+      kraReceiptNumber: creditNote.kraControlNumber,
+      transmissionTimestamp: new Date().toISOString().replace('T', ' ').slice(0, 19),
+      retryCount: 0,
+      verificationUrl: `https://itax.kra.go.ke/verify?cu=${creditNote.cuNumber}&cn=${creditNote.creditNoteNumber}`,
+      qrPayload: `https://itax.kra.go.ke/verify?cu=${creditNote.cuNumber}&cn=${creditNote.creditNoteNumber}`,
+    };
+    setEtimsRecords((prev) => [cnEtimsRec, ...prev]);
   };
 
   // Determine required module for current route
@@ -439,15 +870,37 @@ export default function App() {
       );
     }
 
-    // eTIMS Compliance
+    // eTIMS Compliance (Phase 6)
     if (currentPath.startsWith('/etims')) {
       return (
         <EtimsView
           records={etimsRecords}
+          queueItems={etimsQueue}
+          config={etimsConfig}
+          creditNotes={creditNotes}
+          invoices={invoices}
+          products={products}
           isSandbox={isSandbox}
-          onToggleSandbox={() => setIsSandbox(!isSandbox)}
-          onTransmitQueue={handleTransmitEtimsQueue}
           userRole={currentUser.role}
+          userFullName={currentUser.fullName}
+          currentPath={currentPath}
+          onNavigate={(path: string) => setCurrentPath(path)}
+          onToggleSandbox={() => {
+            const nextSandbox = !isSandbox;
+            setIsSandbox(nextSandbox);
+            setEtimsConfig((prev) => ({
+              ...prev,
+              environment: nextSandbox ? 'SANDBOX' : 'PRODUCTION',
+              isProductionActive: !nextSandbox,
+              apiUrl: nextSandbox
+                ? 'https://etims-sbx.kra.go.ke/etims-api/v1/taxpayer-invoices'
+                : 'https://etims.kra.go.ke/etims-api/v1/taxpayer-invoices',
+            }));
+          }}
+          onTransmitQueue={handleTransmitEtimsQueue}
+          onRetryQueueItem={handleRetryQueueItem}
+          onUpdateConfig={handleUpdateEtimsConfig}
+          onCreateCreditNote={handleCreateCreditNote}
         />
       );
     }
@@ -465,13 +918,66 @@ export default function App() {
       );
     }
 
-    // Operations & Inventory
-    if (currentPath.startsWith('/inventory') || currentPath.startsWith('/procurement') || currentPath.startsWith('/hr')) {
+    // Operations: Inventory & Multi-Warehouse
+    if (currentPath.startsWith('/inventory')) {
       return (
         <InventoryView
           products={products}
-          onAddProduct={handleAddProduct}
+          warehouses={erpState.warehouses}
+          warehouseStocks={erpState.warehouseStocks}
+          stockMovements={erpState.stockMovements}
+          fixedAssets={erpState.fixedAssets}
           userRole={currentUser.role}
+          userFullName={currentUser.fullName}
+          onAddProduct={handleAddProduct}
+          onPostAdjustment={handlePostStockAdjustment}
+          onTransferStock={handleTransferStock}
+          onAddAsset={handleAddAsset}
+        />
+      );
+    }
+
+    // Operations: Procurement & Commercial Orders
+    if (currentPath.startsWith('/procurement')) {
+      return (
+        <ProcurementView
+          purchaseOrders={erpState.purchaseOrders}
+          goodsReceiptNotes={erpState.goodsReceiptNotes}
+          suppliers={erpState.suppliers}
+          supplierBills={erpState.supplierBills}
+          salesOrders={erpState.salesOrders}
+          quotations={erpState.quotations}
+          products={products}
+          warehouses={erpState.warehouses}
+          branches={branches}
+          customers={customers}
+          userRole={currentUser.role}
+          userFullName={currentUser.fullName}
+          onApprovePO={handleApprovePO}
+          onCreatePO={handleCreatePO}
+          onConfirmReceipt={handleConfirmReceipt}
+          onCreateSalesOrder={handleCreateSalesOrder}
+          onAddSupplier={handleAddSupplier}
+        />
+      );
+    }
+
+    // Operations: Human Resources & Statutory Payroll
+    if (currentPath.startsWith('/hr')) {
+      return (
+        <HrPayrollView
+          departments={erpState.departments}
+          employees={erpState.employees}
+          payrollRuns={erpState.payrollRuns}
+          attendance={erpState.attendance}
+          leaveRequests={erpState.leaveRequests}
+          userRole={currentUser.role}
+          userFullName={currentUser.fullName}
+          onAddEmployee={handleAddEmployee}
+          onCreatePayrollRun={handleCreatePayrollRun}
+          onPostPayrollToGl={handlePostPayrollToGl}
+          onSubmitLeave={handleSubmitLeave}
+          onUpdateLeaveStatus={handleUpdateLeaveStatus}
         />
       );
     }

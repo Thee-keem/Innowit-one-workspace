@@ -154,7 +154,7 @@ export interface InvoiceRecord {
   issueDate: string;
   dueDate: string;
   paymentTermsDays: number;
-  status: 'DRAFT' | 'POSTED' | 'KRA_ACCEPTED' | 'PAID' | 'OVERDUE';
+  status: 'DRAFT' | 'POSTED' | 'KRA_ACCEPTED' | 'PAID' | 'OVERDUE' | 'VOID' | 'CANCELLED';
   items: InvoiceLineItem[];
   subtotal: number;
   taxableAmount?: number;
@@ -168,6 +168,17 @@ export interface InvoiceRecord {
   createdAt: string;
 }
 
+export type EtimsMode = 'OSCU' | 'VSCU';
+export type EtimsEnvironment = 'SANDBOX' | 'PRODUCTION';
+export type EtimsSubmissionStatus =
+  | 'PENDING'
+  | 'IN_FLIGHT'
+  | 'ACCEPTED'
+  | 'REJECTED'
+  | 'RETRY_SCHEDULED'
+  | 'CANCELLED'
+  | 'FAILED';
+
 export interface EtimsRecord {
   id: string;
   invoiceId?: string;
@@ -180,15 +191,94 @@ export interface EtimsRecord {
   totalAmount?: number;
   taxableAmount?: number;
   taxAmount?: number;
-  environment: 'SANDBOX' | 'PRODUCTION';
+  environment: EtimsEnvironment;
   status: 'PENDING' | 'TRANSMITTED' | 'ACCEPTED' | 'FAILED';
+  mode?: EtimsMode;
   cuNumber: string; // Control Unit Number (e.g. KRAMU1234567890)
   kraReceiptNumber?: string;
+  kraControlNumber?: string;
+  internalSignature?: string;
   transmissionTimestamp: string;
   verificationUrl?: string;
   qrPayload?: string;
   errorCode?: string;
   retryCount: number;
+  payloadJson?: string;
+  responseJson?: string;
+}
+
+export interface EtimsQueueItem {
+  id: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  customerName: string;
+  customerPin: string;
+  idempotencyKey: string; // UUIDv4
+  mode: EtimsMode;
+  environment: EtimsEnvironment;
+  status: EtimsSubmissionStatus;
+  totalAmountKes: number;
+  vatAmountKes: number;
+  cuNumber: string;
+  kraControlNumber?: string;
+  internalSignature?: string;
+  qrPayload?: string;
+  payloadJson: string;
+  responseJson?: string;
+  attemptCount: number;
+  lastError?: string;
+  nextRetryAt?: string;
+  transmissionTimestamp?: string;
+}
+
+export interface EtimsConfigurationRecord {
+  id: string;
+  legalName: string;
+  tradeName: string;
+  kraPin: string;
+  branchCode: string;
+  vatNumber: string;
+  mode: EtimsMode;
+  environment: EtimsEnvironment;
+  deviceSerial: string;
+  clientSecretMasked: string;
+  apiUrl: string;
+  isCertified: boolean;
+  isProductionActive: boolean;
+  vatOutputAccount: string;
+  vatInputAccount: string;
+  withholdingAccount: string;
+  lastPingLatencyMs?: number;
+  lastPingStatus?: 'CONNECTED' | 'ERROR';
+}
+
+export interface CreditNoteRecord {
+  id: string;
+  creditNoteNumber: string; // e.g. "CN-2026-0012"
+  originalInvoiceId: string;
+  originalInvoiceNumber: string;
+  originalKraControlNumber: string;
+  customerName: string;
+  customerPin: string;
+  reasonCode: 'RETURN_GOODS' | 'PRICE_CORRECTION' | 'INVOICE_CANCELLATION' | 'SERVICE_DEFICIENCY';
+  reasonNotes: string;
+  subtotalKes: number;
+  taxAmountKes: number;
+  totalAmountKes: number;
+  status: 'ACCEPTED' | 'PENDING';
+  kraControlNumber: string;
+  cuNumber: string;
+  issuedAt: string;
+  journalEntryId?: string;
+  items: {
+    productId: string;
+    productSku: string;
+    productName: string;
+    quantity: number;
+    unitPriceKes: number;
+    taxRate: number;
+    lineTotalKes: number;
+  }[];
 }
 
 export interface CustomerRecord {
@@ -399,13 +489,337 @@ export interface SalesRepRecord {
 
 export interface ActivityLogRecord {
   id: string;
-  entityType: 'CUSTOMER' | 'DEAL' | 'TASK';
+  entityType: 'CUSTOMER' | 'DEAL' | 'TASK' | 'ORDER' | 'STOCK' | 'PAYROLL';
   entityId: string;
   entityName?: string;
   title: string;
   description: string;
   user: string;
   timestamp: string;
-  type: 'CALL' | 'EMAIL' | 'MEETING' | 'STAGE_CHANGE' | 'NOTE';
+  type: 'CALL' | 'EMAIL' | 'MEETING' | 'STAGE_CHANGE' | 'NOTE' | 'INVENTORY' | 'PAYROLL';
+}
+
+// ============================================================================
+// ERP OPERATIONS TYPES (Phase 5)
+// ============================================================================
+
+export interface WarehouseRecord {
+  id: string;
+  branchId: string;
+  branchName: string;
+  code: string; // e.g. "WH-NBO-01"
+  name: string;
+  location: string;
+  capacityUnits: number;
+  managerName: string;
+  contactPhone: string;
+  isCentral: boolean;
+}
+
+export interface WarehouseStockRecord {
+  id: string;
+  productId: string;
+  warehouseId: string;
+  warehouseCode: string;
+  quantityOnHand: number;
+  quantityReserved: number;
+  binLocation: string; // e.g. "RACK-A4-BIN02"
+}
+
+export type StockMovementType =
+  | 'RECEIPT'
+  | 'ISSUE'
+  | 'TRANSFER'
+  | 'ADJUSTMENT'
+  | 'RETURN';
+
+export interface StockMovementRecord {
+  id: string;
+  movementNumber: string; // e.g. "MOV-2026-0042"
+  productId: string;
+  productSku: string;
+  productName: string;
+  warehouseId: string;
+  warehouseName: string;
+  targetWarehouseId?: string;
+  targetWarehouseName?: string;
+  movementType: StockMovementType;
+  quantity: number; // Positive for increase, negative or absolute with type
+  unitCostKes: number;
+  totalValueKes: number;
+  referenceDocument: string; // e.g. "GRN-2026-0012", "SO-2026-0033", "ADJ-COUNT"
+  reason?: string;
+  performedBy: string;
+  timestamp: string;
+  journalEntryId?: string;
+}
+
+export interface SupplierRecord {
+  id: string;
+  supplierCode: string; // e.g. "VEND-001"
+  name: string;
+  kraPin: string;
+  email: string;
+  phone: string;
+  contactPerson: string;
+  address: string;
+  category: string;
+  paymentTermsDays: number;
+  rating: number; // 1 - 5
+  totalSpendKes: number;
+  status: 'ACTIVE' | 'INACTIVE';
+}
+
+export interface PurchaseOrderItem {
+  id: string;
+  productId: string;
+  productSku: string;
+  productName: string;
+  quantity: number;
+  receivedQuantity: number;
+  unitCostKes: number;
+  taxRate: number; // 0.16
+  lineTotalKes: number;
+}
+
+export interface PurchaseOrderRecord {
+  id: string;
+  poNumber: string; // e.g. "PO-2026-0084"
+  supplierId: string;
+  supplierName: string;
+  supplierPin: string;
+  branchId: string;
+  branchName: string;
+  orderDate: string;
+  expectedDeliveryDate: string;
+  status: 'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'RECEIVED' | 'CANCELLED';
+  items: PurchaseOrderItem[];
+  subtotalKes: number;
+  taxAmountKes: number;
+  totalAmountKes: number;
+  approvedBy?: string;
+  approvedAt?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface GoodsReceiptNoteItem {
+  productId: string;
+  productSku: string;
+  productName: string;
+  quantityReceived: number;
+  unitCostKes: number;
+  totalCostKes: number;
+}
+
+export interface GoodsReceiptNoteRecord {
+  id: string;
+  grnNumber: string; // e.g. "GRN-2026-0029"
+  poId: string;
+  poNumber: string;
+  supplierId: string;
+  supplierName: string;
+  warehouseId: string;
+  warehouseName: string;
+  receivedDate: string;
+  receivedBy: string;
+  items: GoodsReceiptNoteItem[];
+  totalValueKes: number;
+  billGenerated: boolean;
+  billId?: string;
+  journalEntryId?: string;
+  notes?: string;
+}
+
+export interface SupplierBillRecord {
+  id: string;
+  billNumber: string; // e.g. "BILL-2026-0018"
+  supplierId: string;
+  supplierName: string;
+  supplierPin: string;
+  grnId?: string;
+  grnNumber?: string;
+  poNumber?: string;
+  billDate: string;
+  dueDate: string;
+  amountKes: number;
+  taxAmountKes: number;
+  totalAmountKes: number;
+  status: 'UNPAID' | 'PAID';
+  journalEntryId: string;
+}
+
+export interface SalesOrderItemRecord {
+  id: string;
+  productId: string;
+  productSku: string;
+  productName: string;
+  quantity: number;
+  unitPriceKes: number;
+  taxRate: number;
+  lineTotalKes: number;
+}
+
+export interface SalesOrderRecord {
+  id: string;
+  orderNumber: string; // e.g. "SO-2026-0051"
+  customerId: string;
+  customerName: string;
+  customerPin?: string;
+  quotationId?: string;
+  quotationNumber?: string;
+  orderDate: string;
+  expectedDispatchDate: string;
+  status: 'DRAFT' | 'CONFIRMED' | 'PROCESSING' | 'DISPATCHED' | 'COMPLETED' | 'CANCELLED';
+  items: SalesOrderItemRecord[];
+  totalAmountKes: number;
+  taxAmountKes: number;
+  invoiceId?: string;
+  invoiceNumber?: string;
+  stockReserved: boolean;
+  deliveryNoteNumber?: string;
+  salesRepName: string;
+  notes?: string;
+}
+
+export interface QuotationRecord {
+  id: string;
+  quotationNumber: string; // e.g. "QT-2026-0112"
+  dealId?: string;
+  customerId: string;
+  customerName: string;
+  issueDate: string;
+  validUntil: string;
+  items: SalesOrderItemRecord[];
+  totalAmountKes: number;
+  status: 'DRAFT' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'CONVERTED';
+  convertedOrderId?: string;
+}
+
+export interface DepartmentRecord {
+  id: string;
+  name: string;
+  code: string;
+  headOfDept: string;
+  employeeCount: number;
+  monthlyBudgetKes: number;
+}
+
+export interface EmployeeRecord {
+  id: string;
+  employeeCode: string; // e.g. "EMP-001"
+  userId?: string;
+  fullName: string;
+  email: string;
+  phone: string;
+  departmentId: string;
+  departmentName: string;
+  jobTitle: string;
+  hireDate: string;
+  kraPin: string;
+  nationalId: string;
+  nssfNumber: string;
+  nhifNumber: string;
+  bankName: string;
+  bankAccountNumber: string;
+  basicSalaryKes: number;
+  housingAllowanceKes: number;
+  transportAllowanceKes: number;
+  isActive: boolean;
+}
+
+export interface PayslipRecord {
+  id: string;
+  payrollRunId: string;
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  departmentName: string;
+  jobTitle: string;
+  kraPin: string;
+  basicSalaryKes: number;
+  allowancesKes: number;
+  grossSalaryKes: number;
+  payeTaxKes: number;
+  nssfDeductionKes: number;
+  nhifDeductionKes: number; // SHIF
+  housingLevyKes: number;
+  totalDeductionsKes: number;
+  netSalaryKes: number;
+  paymentStatus: 'PENDING' | 'DISBURSED';
+}
+
+export interface PayrollRunRecord {
+  id: string;
+  runNumber: string; // e.g. "PAY-2026-11"
+  month: string; // "November"
+  year: number; // 2026
+  periodLabel: string; // "November 2026"
+  employeeCount: number;
+  totalGrossKes: number;
+  totalPayeKes: number;
+  totalNssfKes: number;
+  totalNhifKes: number;
+  totalHousingLevyKes: number;
+  totalDeductionsKes: number;
+  totalNetPayKes: number;
+  status: 'DRAFT' | 'APPROVED' | 'POSTED_TO_GL';
+  approvedBy?: string;
+  approvedAt?: string;
+  journalEntryId?: string;
+  payslips: PayslipRecord[];
+}
+
+export interface AttendanceRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  date: string;
+  clockInTime: string;
+  clockOutTime: string;
+  hoursWorked: number;
+  status: 'PRESENT' | 'LATE' | 'HALF_DAY' | 'ON_LEAVE';
+}
+
+export interface LeaveRequestRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  leaveType: 'ANNUAL' | 'SICK' | 'MATERNITY' | 'COMPASSIONATE';
+  startDate: string;
+  endDate: string;
+  daysCount: number;
+  reason: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  approvedBy?: string;
+}
+
+export interface FixedAssetRecord {
+  id: string;
+  assetTag: string; // e.g. "AST-2026-001"
+  name: string;
+  category: 'HARDWARE' | 'FURNITURE' | 'VEHICLE' | 'INFRASTRUCTURE';
+  location: string;
+  custodian: string;
+  purchaseDate: string;
+  purchaseCostKes: number;
+  depreciationRateAnnual: number; // e.g. 0.20 for 20%
+  accumulatedDepreciationKes: number;
+  netBookValueKes: number;
+  status: 'ACTIVE' | 'MAINTENANCE' | 'DISPOSED';
+}
+
+export interface ErpProjectRecord {
+  id: string;
+  projectCode: string; // e.g. "PRJ-KEN-01"
+  name: string;
+  customerId: string;
+  customerName: string;
+  leadManager: string;
+  startDate: string;
+  deadline: string;
+  budgetKes: number;
+  spentKes: number;
+  status: 'PLANNING' | 'ACTIVE' | 'ON_HOLD' | 'COMPLETED';
 }
 
