@@ -1,0 +1,6 @@
+{
+  "name": "Innowit One Workspace",
+  "description": "Enterprise workspace and ERP system featuring 12-role RBAC, hierarchical Chart of Accounts, Kenya eTIMS tax compliance kernel, CRM, and financial accounting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

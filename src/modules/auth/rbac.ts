@@ -1,0 +1,241 @@
+import { UserRole, SystemModule, ActionType } from '@/types';
+
+// Matrix governing the 12 system roles across 10 modules
+export const ROLE_PERMISSIONS: Record<UserRole, Partial<Record<SystemModule, ActionType[]>>> = {
+  SUPER_ADMIN: {
+    COLLABORATION: ['VIEW', 'CREATE', 'UPDATE', 'DELETE'],
+    CRM: ['VIEW', 'CREATE', 'UPDATE', 'DELETE', 'APPROVE'],
+    ACCOUNTING: ['VIEW', 'CREATE', 'UPDATE', 'DELETE', 'APPROVE', 'POST_GL'],
+    INVENTORY: ['VIEW', 'CREATE', 'UPDATE', 'DELETE', 'APPROVE'],
+    PROCUREMENT: ['VIEW', 'CREATE', 'UPDATE', 'DELETE', 'APPROVE'],
+    SALES: ['VIEW', 'CREATE', 'UPDATE', 'DELETE', 'APPROVE'],
+    HR_PAYROLL: ['VIEW', 'CREATE', 'UPDATE', 'DELETE', 'APPROVE', 'POST_GL'],
+    ETIMS_COMPLIANCE: ['VIEW', 'CREATE', 'UPDATE', 'DELETE', 'APPROVE', 'TRANSMIT_TAX'],
+    BI_REPORTS: ['VIEW'],
+    SYSTEM_ADMIN: ['VIEW', 'CREATE', 'UPDATE', 'DELETE', 'APPROVE'],
+  },
+  ADMIN: {
+    COLLABORATION: ['VIEW', 'CREATE', 'UPDATE', 'DELETE'],
+    CRM: ['VIEW', 'CREATE', 'UPDATE', 'DELETE', 'APPROVE'],
+    ACCOUNTING: ['VIEW', 'CREATE', 'UPDATE', 'APPROVE'],
+    INVENTORY: ['VIEW', 'CREATE', 'UPDATE', 'APPROVE'],
+    PROCUREMENT: ['VIEW', 'CREATE', 'UPDATE', 'APPROVE'],
+    SALES: ['VIEW', 'CREATE', 'UPDATE', 'APPROVE'],
+    HR_PAYROLL: ['VIEW', 'CREATE', 'UPDATE'],
+    ETIMS_COMPLIANCE: ['VIEW'],
+    BI_REPORTS: ['VIEW'],
+    SYSTEM_ADMIN: ['VIEW', 'CREATE', 'UPDATE'],
+  },
+  EXECUTIVE: {
+    COLLABORATION: ['VIEW', 'CREATE'],
+    CRM: ['VIEW'],
+    ACCOUNTING: ['VIEW'],
+    INVENTORY: ['VIEW'],
+    PROCUREMENT: ['VIEW'],
+    SALES: ['VIEW'],
+    HR_PAYROLL: ['VIEW'],
+    ETIMS_COMPLIANCE: ['VIEW'],
+    BI_REPORTS: ['VIEW'],
+    SYSTEM_ADMIN: [],
+  },
+  FINANCE_MANAGER: {
+    COLLABORATION: ['VIEW', 'CREATE'],
+    CRM: ['VIEW'],
+    ACCOUNTING: ['VIEW', 'CREATE', 'UPDATE', 'APPROVE', 'POST_GL'],
+    INVENTORY: ['VIEW'],
+    PROCUREMENT: ['VIEW', 'APPROVE'],
+    SALES: ['VIEW'],
+    HR_PAYROLL: ['VIEW', 'APPROVE', 'POST_GL'],
+    ETIMS_COMPLIANCE: ['VIEW', 'APPROVE', 'TRANSMIT_TAX'],
+    BI_REPORTS: ['VIEW'],
+    SYSTEM_ADMIN: [],
+  },
+  ACCOUNTANT: {
+    COLLABORATION: ['VIEW', 'CREATE'],
+    CRM: ['VIEW'],
+    ACCOUNTING: ['VIEW', 'CREATE', 'UPDATE', 'POST_GL'],
+    INVENTORY: ['VIEW'],
+    PROCUREMENT: ['VIEW', 'CREATE'],
+    SALES: ['VIEW', 'CREATE'],
+    HR_PAYROLL: ['VIEW', 'CREATE'],
+    ETIMS_COMPLIANCE: ['VIEW', 'TRANSMIT_TAX'],
+    BI_REPORTS: ['VIEW'],
+    SYSTEM_ADMIN: [],
+  },
+  SALES_MANAGER: {
+    COLLABORATION: ['VIEW', 'CREATE'],
+    CRM: ['VIEW', 'CREATE', 'UPDATE', 'DELETE', 'APPROVE'],
+    ACCOUNTING: ['VIEW'],
+    INVENTORY: ['VIEW'],
+    PROCUREMENT: [],
+    SALES: ['VIEW', 'CREATE', 'UPDATE', 'APPROVE'],
+    HR_PAYROLL: [],
+    ETIMS_COMPLIANCE: [],
+    BI_REPORTS: ['VIEW'],
+    SYSTEM_ADMIN: [],
+  },
+  SALES_REP: {
+    COLLABORATION: ['VIEW', 'CREATE'],
+    CRM: ['VIEW', 'CREATE', 'UPDATE'],
+    ACCOUNTING: [],
+    INVENTORY: ['VIEW'],
+    PROCUREMENT: [],
+    SALES: ['VIEW', 'CREATE'],
+    HR_PAYROLL: [],
+    ETIMS_COMPLIANCE: [],
+    BI_REPORTS: [],
+    SYSTEM_ADMIN: [],
+  },
+  PROCUREMENT_OFFICER: {
+    COLLABORATION: ['VIEW', 'CREATE'],
+    CRM: [],
+    ACCOUNTING: [],
+    INVENTORY: ['VIEW'],
+    PROCUREMENT: ['VIEW', 'CREATE', 'UPDATE'],
+    SALES: [],
+    HR_PAYROLL: [],
+    ETIMS_COMPLIANCE: [],
+    BI_REPORTS: [],
+    SYSTEM_ADMIN: [],
+  },
+  INVENTORY_MANAGER: {
+    COLLABORATION: ['VIEW', 'CREATE'],
+    CRM: [],
+    ACCOUNTING: [],
+    INVENTORY: ['VIEW', 'CREATE', 'UPDATE', 'APPROVE'],
+    PROCUREMENT: ['VIEW'],
+    SALES: ['VIEW'],
+    HR_PAYROLL: [],
+    ETIMS_COMPLIANCE: [],
+    BI_REPORTS: ['VIEW'],
+    SYSTEM_ADMIN: [],
+  },
+  HR_MANAGER: {
+    COLLABORATION: ['VIEW', 'CREATE'],
+    CRM: [],
+    ACCOUNTING: [],
+    INVENTORY: [],
+    PROCUREMENT: [],
+    SALES: [],
+    HR_PAYROLL: ['VIEW', 'CREATE', 'UPDATE', 'APPROVE'],
+    ETIMS_COMPLIANCE: [],
+    BI_REPORTS: ['VIEW'],
+    SYSTEM_ADMIN: [],
+  },
+  PROJECT_MANAGER: {
+    COLLABORATION: ['VIEW', 'CREATE', 'UPDATE'],
+    CRM: ['VIEW'],
+    ACCOUNTING: [],
+    INVENTORY: ['VIEW'],
+    PROCUREMENT: [],
+    SALES: ['VIEW'],
+    HR_PAYROLL: [],
+    ETIMS_COMPLIANCE: [],
+    BI_REPORTS: ['VIEW'],
+    SYSTEM_ADMIN: [],
+  },
+  EMPLOYEE: {
+    COLLABORATION: ['VIEW', 'CREATE'],
+    CRM: [],
+    ACCOUNTING: [],
+    INVENTORY: [],
+    PROCUREMENT: [],
+    SALES: [],
+    HR_PAYROLL: ['VIEW'],
+    ETIMS_COMPLIANCE: [],
+    BI_REPORTS: [],
+    SYSTEM_ADMIN: [],
+  },
+};
+
+export const ROLE_METADATA: Record<UserRole, { label: string; department: string; description: string; color: string }> = {
+  SUPER_ADMIN: {
+    label: 'Super Admin',
+    department: 'Executive Systems',
+    description: 'Unrestricted enterprise operational authority, GL post, and eTIMS transmission permissions',
+    color: '#E03616',
+  },
+  ADMIN: {
+    label: 'System Administrator',
+    department: 'IT Operations',
+    description: 'Workspace configuration, branch governance, user management, and module administration',
+    color: '#1B2436',
+  },
+  EXECUTIVE: {
+    label: 'C-Suite Executive',
+    department: 'Executive Committee',
+    description: 'Read-only cross-departmental oversight, KPI reporting, and strategic audit',
+    color: '#27334D',
+  },
+  FINANCE_MANAGER: {
+    label: 'Finance Manager',
+    department: 'Finance & Treasury',
+    description: 'Fiscal closing, General Ledger posting approvals, budget limits, and tax transmission sign-off',
+    color: '#1B2436',
+  },
+  ACCOUNTANT: {
+    label: 'Lead Accountant',
+    department: 'General Accounting',
+    description: 'Journal entry drafting & posting, AP/AR reconciliation, and tax queue transmissions',
+    color: '#334155',
+  },
+  SALES_MANAGER: {
+    label: 'Sales Director',
+    department: 'Commercial Sales',
+    description: 'Pipeline stage approvals, customer accounts management, deal margin oversight',
+    color: '#E03616',
+  },
+  SALES_REP: {
+    label: 'Senior Sales Representative',
+    department: 'Commercial Sales',
+    description: 'Lead generation, deal pipeline updates, client proposals, quote drafting',
+    color: '#E03616',
+  },
+  PROCUREMENT_OFFICER: {
+    label: 'Procurement Specialist',
+    department: 'Supply Chain',
+    description: 'Vendor RFQs, purchase requisitions, PO creation, receiving verification',
+    color: '#334155',
+  },
+  INVENTORY_MANAGER: {
+    label: 'Warehouse & Inventory Manager',
+    department: 'Logistics',
+    description: 'Stock valuation, bin allocations, replenishment triggers, physical counts',
+    color: '#1B2436',
+  },
+  HR_MANAGER: {
+    label: 'HR & People Manager',
+    department: 'Human Resources',
+    description: 'Employee profiles, payroll approval, statutory NHIF/NSSF deduction schedules',
+    color: '#334155',
+  },
+  PROJECT_MANAGER: {
+    label: 'Technical Project Lead',
+    department: 'Operations',
+    description: 'Milestone tracking, team tasks, cross-functional collaboration spaces',
+    color: '#27334D',
+  },
+  EMPLOYEE: {
+    label: 'Staff Member',
+    department: 'General Staff',
+    description: 'Self-service payroll slips, internal messaging, knowledge docs access',
+    color: '#64748B',
+  },
+};
+
+export function hasPermission(
+  role: UserRole,
+  module: SystemModule,
+  action: ActionType
+): boolean {
+  const allowedActions = ROLE_PERMISSIONS[role]?.[module] || [];
+  return allowedActions.includes(action);
+}
+
+export function canViewModule(role: UserRole, module: SystemModule): boolean {
+  return hasPermission(role, module, 'VIEW');
+}
+
+export function getModulePermissions(role: UserRole, module: SystemModule): ActionType[] {
+  return ROLE_PERMISSIONS[role]?.[module] || [];
+}
