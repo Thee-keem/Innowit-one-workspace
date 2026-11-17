@@ -20,6 +20,7 @@ import {
   Lock,
   Shield,
   FolderKanban,
+  Zap,
 } from 'lucide-react';
 import { UserRole, SystemModule } from '@/types';
 import { canViewModule } from '@/modules/auth/rbac';
@@ -82,9 +83,18 @@ export const NAVIGATION_SECTIONS: NavSection[] = [
     ],
   },
   {
-    title: 'SYSTEM GOVERNANCE',
+    title: 'BUSINESS INTELLIGENCE & AUTOMATIONS',
     items: [
-      { id: 'rbac-matrix', label: '12-Role RBAC Matrix', href: '/system/rbac', icon: Shield, module: 'SYSTEM_ADMIN' },
+      { id: 'bi-executive', label: 'Executive BI Dashboard', href: '/bi/executive', icon: TrendingUp, module: 'BI_REPORTS' },
+      { id: 'bi-automations', label: 'Workflow Automations', href: '/bi/automations', icon: Zap, module: 'BI_REPORTS' },
+    ],
+  },
+  {
+    title: 'SYSTEM GOVERNANCE & AUDIT',
+    items: [
+      { id: 'system-audit', label: 'System Audit Trail', href: '/system/audit-logs', icon: Shield, module: 'SYSTEM_ADMIN' },
+      { id: 'rbac-matrix', label: '12-Role RBAC Matrix', href: '/system/rbac', icon: ShieldCheck, module: 'SYSTEM_ADMIN' },
+      { id: 'system-hardening', label: 'Acceptance & Hardening', href: '/system/hardening', icon: Lock, module: 'SYSTEM_ADMIN' },
     ],
   },
 ];

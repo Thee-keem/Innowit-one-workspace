@@ -10,7 +10,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
-import { Branch, UserSessionPayload } from '@/types';
+import { Branch, UserSessionPayload, SystemNotification } from '@/types';
 import { ROLE_METADATA } from '@/modules/auth/rbac';
 
 interface TopBarProps {
@@ -22,6 +22,9 @@ interface TopBarProps {
   isSandbox: boolean;
   onToggleSandbox: () => void;
   currentUser: UserSessionPayload;
+  notifications?: SystemNotification[];
+  onNotificationClick?: (linkHref?: string) => void;
+  onClearNotifications?: () => void;
 }
 
 export function TopBar({
@@ -33,30 +36,14 @@ export function TopBar({
   isSandbox,
   onToggleSandbox,
   currentUser,
+  notifications = [],
+  onNotificationClick,
+  onClearNotifications,
 }: TopBarProps) {
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
-  const notifications = [
-    {
-      id: 1,
-      title: 'KRA eTIMS Transmission Confirmed',
-      desc: 'Invoice INV-2026-0189 received CU confirmation KRAMU010049281',
-      time: '12m ago',
-    },
-    {
-      id: 2,
-      title: 'Monthly Petty Cash Reconciled',
-      desc: 'Sarah Chebet posted JE-2026-0041 for KES 50,000.00',
-      time: '2h ago',
-    },
-    {
-      id: 3,
-      title: 'eTIMS Air-Gap Sandbox Active',
-      desc: 'Production transmission lock engaged per compliance policy',
-      time: 'Today',
-    },
-  ];
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
     <header className="flex h-14 w-full items-center justify-between border-b border-[#243048] bg-[#141B29] px-4 md:px-6 relative z-10 shrink-0 text-slate-200">
@@ -142,26 +129,66 @@ export function TopBar({
             title="System notifications"
           >
             <Bell size={16} />
-            {/* Loud Blood Orange Notification Beacon */}
-            <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-[#E03616]" />
+            {/* Blood Orange Notification Badge */}
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 h-4 min-w-[16px] px-1 rounded-full bg-[#E03616] text-white text-[9px] font-mono font-bold flex items-center justify-center">
+                {unreadCount}
+              </span>
+            )}
           </button>
 
           {notificationsOpen && (
-            <div className="absolute right-0 mt-1 w-80 rounded-lg border border-[#2D3A52] bg-[#1B2436] shadow-2xl z-30 overflow-hidden">
+            <div className="absolute right-0 mt-1 w-84 rounded-lg border border-[#2D3A52] bg-[#1B2436] shadow-2xl z-30 overflow-hidden">
               <div className="flex items-center justify-between border-b border-[#2D3A52] px-4 py-2.5 bg-[#141B29]">
-                <span className="text-xs font-semibold text-white">System Notifications</span>
-                <span className="text-[10px] text-[#E03616] font-semibold">3 Unread</span>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-semibold text-white">System Notifications</span>
+                  {unreadCount > 0 && (
+                    <span className="text-[10px] text-[#E03616] font-semibold font-mono">
+                      {unreadCount} New
+                    </span>
+                  )}
+                </div>
+                {onClearNotifications && notifications.length > 0 && (
+                  <button
+                    onClick={onClearNotifications}
+                    className="text-[10px] text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    Mark all read
+                  </button>
+                )}
               </div>
-              <div className="divide-y divide-[#2D3A52]/60 max-h-72 overflow-y-auto">
-                {notifications.map((n) => (
-                  <div key={n.id} className="p-3 hover:bg-[#243048] transition-colors">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-slate-100">{n.title}</span>
-                      <span className="text-[10px] text-slate-400">{n.time}</span>
-                    </div>
-                    <p className="mt-1 text-[11px] text-slate-400">{n.desc}</p>
+              <div className="divide-y divide-[#2D3A52]/60 max-h-80 overflow-y-auto">
+                {notifications.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-400">
+                    No notifications
                   </div>
-                ))}
+                ) : (
+                  notifications.map((n) => (
+                    <button
+                      key={n.id}
+                      onClick={() => {
+                        if (onNotificationClick && n.linkHref) {
+                          onNotificationClick(n.linkHref);
+                          setNotificationsOpen(false);
+                        }
+                      }}
+                      className={`w-full p-3 text-left hover:bg-[#243048] transition-colors cursor-pointer ${
+                        !n.read ? 'bg-[#243048]/40' : ''
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-100 flex items-center gap-1.5">
+                          {!n.read && (
+                            <span className="h-1.5 w-1.5 rounded-full bg-[#E03616]" />
+                          )}
+                          {n.title}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">{n.timestamp}</span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-300 leading-snug">{n.message}</p>
+                    </button>
+                  ))
+                )}
               </div>
             </div>
           )}
