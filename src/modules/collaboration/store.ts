@@ -28,11 +28,13 @@ export interface CollaborationState {
 
 export function loadCollaborationState(): CollaborationState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed.channels && parsed.messages) {
-        return parsed;
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.channels && parsed.messages) {
+          return parsed;
+        }
       }
     }
   } catch (err) {
@@ -51,6 +53,7 @@ export function loadCollaborationState(): CollaborationState {
 
 export function saveCollaborationState(state: CollaborationState): void {
   try {
+    if (typeof localStorage === 'undefined') return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (err) {
     console.warn('Failed to save collaboration state to localStorage:', err);

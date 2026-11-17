@@ -26,9 +26,18 @@ import { HrPayrollView } from '@/components/views/HrPayrollView';
 import { ExecutiveBiView } from '@/components/views/ExecutiveBiView';
 import { WorkflowAutomationsView } from '@/components/views/WorkflowAutomationsView';
 import { AuditLogsView } from '@/components/views/AuditLogsView';
+import { Phase8HardeningView } from '@/components/views/Phase8HardeningView';
+import { ProductionSwitchModal } from '@/components/etims/ProductionSwitchModal';
 import { loadErpState, saveErpState, ErpState } from '@/modules/erp/store';
 import { loadCrmState } from '@/modules/crm/store';
 import { loadAuditLogs, logAuditEntry } from '@/modules/audit/store';
+import {
+  loadAirGapStatus,
+  lockSandboxAirGap,
+  validateOutboundTransmission,
+  KRA_ENDPOINTS,
+} from '@/modules/etims/airgap';
+import { resetWorkspaceDemoData, getBaselineKernelState } from '@/modules/seed/reset';
 import {
   loadAutomationRules,
   saveAutomationRules,
@@ -96,19 +105,22 @@ export default function App() {
   // Shell Modals
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isRoleSwitcherOpen, setIsRoleSwitcherOpen] = useState(false);
+  const [isTopBarProdModalOpen, setIsTopBarProdModalOpen] = useState(false);
 
   // Operational Context
   const [branches] = useState<Branch[]>(DEFAULT_BRANCHES);
   const [activeBranch, setActiveBranch] = useState<Branch>(DEFAULT_BRANCHES[0]);
   const [currentUser, setCurrentUser] = useState<UserSessionPayload>(SEED_USERS[0]); // default Super Admin
-  const [isSandbox, setIsSandbox] = useState<boolean>(true); // Sandbox air-gap default
+  const [isSandbox, setIsSandbox] = useState<boolean>(() => loadAirGapStatus().environment === 'SANDBOX');
+
+  const crmState = useMemo(() => loadCrmState(), []);
 
   // Kernel State Stores
   const [accounts, setAccounts] = useState<Account[]>(DEFAULT_ACCOUNTS);
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>(DEFAULT_JOURNAL_ENTRIES);
   const [invoices, setInvoices] = useState<InvoiceRecord[]>(SEED_INVOICES);
   const [etimsRecords, setEtimsRecords] = useState<EtimsRecord[]>(DEFAULT_ETIMS_RECORDS);
-  const [customers, setCustomers] = useState<CustomerRecord[]>(DEFAULT_CUSTOMERS);
+  const [customers, setCustomers] = useState<CustomerRecord[]>(() => crmState.customers || DEFAULT_CUSTOMERS);
   const [products, setProducts] = useState<ProductRecord[]>(DEFAULT_PRODUCTS);
 
   // eTIMS Compliance Engine State (Phase 6)
@@ -132,7 +144,6 @@ export default function App() {
   const [automationRules, setAutomationRules] = useState<AutomationRule[]>(() => loadAutomationRules());
   const [automationLogs, setAutomationLogs] = useState<AutomationExecutionLog[]>(() => loadAutomationLogs());
   const [notifications, setNotifications] = useState<SystemNotification[]>(() => loadNotifications());
-  const crmState = useMemo(() => loadCrmState(), []);
 
   // Phase 7 Automation & Event Bus Handlers
   const handleRunAutomations = () => {
@@ -657,7 +668,70 @@ export default function App() {
     setProducts((prev) => [newProd, ...prev]);
   };
 
+  const handleActivateProduction = () => {
+    setIsSandbox(false);
+    setEtimsConfig((prev) => ({
+      ...prev,
+      environment: 'PRODUCTION',
+      isProductionActive: true,
+      apiUrl: KRA_ENDPOINTS.PRODUCTION,
+    }));
+    setAuditLogs(loadAuditLogs());
+  };
+
+  const handleLockSandbox = () => {
+    lockSandboxAirGap({
+      userId: currentUser.userId,
+      userFullName: currentUser.fullName,
+      userRole: currentUser.role,
+    });
+    setIsSandbox(true);
+    setEtimsConfig((prev) => ({
+      ...prev,
+      environment: 'SANDBOX',
+      isProductionActive: false,
+      apiUrl: KRA_ENDPOINTS.SANDBOX,
+    }));
+    setAuditLogs(loadAuditLogs());
+  };
+
+  const handleResetDemoData = () => {
+    resetWorkspaceDemoData();
+    const baseline = getBaselineKernelState();
+    setAccounts(baseline.accounts);
+    setJournalEntries(baseline.journalEntries);
+    setInvoices(baseline.invoices);
+    setEtimsRecords(baseline.etimsRecords);
+    setCustomers(baseline.customers);
+    setProducts(baseline.products);
+    setEtimsConfig(baseline.etimsConfig);
+    setEtimsQueue(baseline.etimsQueue);
+    setCreditNotes(baseline.creditNotes);
+    setIsSandbox(true);
+    setErpState(loadErpState());
+    setAutomationRules(loadAutomationRules());
+    setAutomationLogs(loadAutomationLogs());
+    setNotifications(loadNotifications());
+    logAuditEntry({
+      userId: currentUser.userId,
+      userFullName: currentUser.fullName,
+      userRole: currentUser.role,
+      action: 'UPDATE',
+      entityType: 'SystemSeed',
+      entityId: 'workspace_demo_reset',
+      entityName: 'Demo Workspace Reset to Baseline Seed',
+      changes: { environment: 'SANDBOX', resetBy: currentUser.fullName },
+    });
+    setAuditLogs(loadAuditLogs());
+  };
+
   const handleRetryQueueItem = (itemId: string) => {
+    const targetUrl = isSandbox ? KRA_ENDPOINTS.SANDBOX : KRA_ENDPOINTS.PRODUCTION;
+    const airGapCheck = validateOutboundTransmission(targetUrl, isSandbox);
+    if (!airGapCheck.allowed) {
+      return;
+    }
+
     const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
     const controlNo = `KRA2026${Date.now().toString().slice(-7)}`;
     const signature = `SIG-${Math.random().toString(36).substring(2, 10).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
@@ -703,9 +777,31 @@ export default function App() {
         return rec;
       })
     );
+
+    logAuditEntry({
+      userId: currentUser.userId,
+      userFullName: currentUser.fullName,
+      userRole: currentUser.role,
+      action: 'TRANSMIT_TAX',
+      entityType: 'EtimsQueueItem',
+      entityId: itemId,
+      entityName: updatedInvNumber || itemId,
+      changes: {
+        endpoint: airGapCheck.endpoint,
+        environment: isSandbox ? 'SANDBOX' : 'PRODUCTION',
+        kraControlNumber: controlNo,
+      },
+    });
+    setAuditLogs(loadAuditLogs());
   };
 
   const handleTransmitEtimsQueue = () => {
+    const targetUrl = isSandbox ? KRA_ENDPOINTS.SANDBOX : KRA_ENDPOINTS.PRODUCTION;
+    const airGapCheck = validateOutboundTransmission(targetUrl, isSandbox);
+    if (!airGapCheck.allowed) {
+      return;
+    }
+
     const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
     const generatedMap = new Map<string, { controlNo: string; signature: string }>();
 
@@ -751,14 +847,28 @@ export default function App() {
         return rec;
       })
     );
+
+    logAuditEntry({
+      userId: currentUser.userId,
+      userFullName: currentUser.fullName,
+      userRole: currentUser.role,
+      action: 'TRANSMIT_TAX',
+      entityType: 'EtimsOutboxBatch',
+      entityId: `batch_${Date.now()}`,
+      entityName: `Batch Outbox Dispatch (${generatedMap.size} invoices)`,
+      changes: {
+        endpoint: airGapCheck.endpoint,
+        environment: isSandbox ? 'SANDBOX' : 'PRODUCTION',
+        dispatchedInvoices: Array.from(generatedMap.keys()),
+      },
+    });
+    setAuditLogs(loadAuditLogs());
   };
 
   const handleUpdateEtimsConfig = (newConfig: EtimsConfigurationRecord) => {
     setEtimsConfig(newConfig);
-    if (newConfig.environment === 'PRODUCTION' && newConfig.isProductionActive) {
-      setIsSandbox(false);
-    } else if (newConfig.environment === 'SANDBOX') {
-      setIsSandbox(true);
+    if (newConfig.environment === 'SANDBOX') {
+      handleLockSandbox();
     }
   };
 
@@ -981,21 +1091,17 @@ export default function App() {
           invoices={invoices}
           products={products}
           isSandbox={isSandbox}
+          userId={currentUser.userId}
           userRole={currentUser.role}
           userFullName={currentUser.fullName}
           currentPath={currentPath}
           onNavigate={(path: string) => setCurrentPath(path)}
           onToggleSandbox={() => {
-            const nextSandbox = !isSandbox;
-            setIsSandbox(nextSandbox);
-            setEtimsConfig((prev) => ({
-              ...prev,
-              environment: nextSandbox ? 'SANDBOX' : 'PRODUCTION',
-              isProductionActive: !nextSandbox,
-              apiUrl: nextSandbox
-                ? 'https://etims-sbx.kra.go.ke/etims-api/v1/taxpayer-invoices'
-                : 'https://etims.kra.go.ke/etims-api/v1/taxpayer-invoices',
-            }));
+            if (isSandbox) {
+              handleActivateProduction();
+            } else {
+              handleLockSandbox();
+            }
           }}
           onTransmitQueue={handleTransmitEtimsQueue}
           onRetryQueueItem={handleRetryQueueItem}
@@ -1150,6 +1256,32 @@ export default function App() {
       );
     }
 
+    // Phase 8: Production Hardening, Acceptance Testing & Seeding
+    if (currentPath === '/system/hardening') {
+      return (
+        <Phase8HardeningView
+          accounts={accounts}
+          journalEntries={journalEntries}
+          products={products}
+          invoices={invoices}
+          customers={customers}
+          purchaseOrders={erpState.purchaseOrders}
+          stockMovements={erpState.stockMovements}
+          warehouseStocks={erpState.warehouseStocks}
+          queueItems={etimsQueue}
+          creditNotes={creditNotes}
+          allUsers={SEED_USERS}
+          currentUser={currentUser}
+          isSandbox={isSandbox}
+          taxpayerPin={etimsConfig.kraPin}
+          onLockSandbox={handleLockSandbox}
+          onActivateProduction={handleActivateProduction}
+          onResetDemoData={handleResetDemoData}
+          onSwitchUser={(user) => setCurrentUser(user)}
+        />
+      );
+    }
+
     // Fallback default
     return (
       <ChartOfAccountsView
@@ -1181,7 +1313,13 @@ export default function App() {
           activeBranch={activeBranch}
           onSelectBranch={(branch: Branch) => setActiveBranch(branch)}
           isSandbox={isSandbox}
-          onToggleSandbox={() => setIsSandbox(!isSandbox)}
+          onToggleSandbox={() => {
+            if (isSandbox) {
+              setIsTopBarProdModalOpen(true);
+            } else {
+              handleLockSandbox();
+            }
+          }}
           currentUser={currentUser}
           notifications={notifications}
           onNotificationClick={(href) => href && setCurrentPath(href)}
@@ -1214,6 +1352,17 @@ export default function App() {
         currentUser={currentUser}
         onSelectUser={(user: UserSessionPayload) => setCurrentUser(user)}
         allUsers={SEED_USERS}
+      />
+
+      {/* TopBar Dual-Step eTIMS Production Air-Gap Modal */}
+      <ProductionSwitchModal
+        isOpen={isTopBarProdModalOpen}
+        onClose={() => setIsTopBarProdModalOpen(false)}
+        onConfirmSwitch={handleActivateProduction}
+        userId={currentUser.userId}
+        userFullName={currentUser.fullName}
+        userRole={currentUser.role}
+        taxpayerPin={etimsConfig.kraPin}
       />
     </div>
   );

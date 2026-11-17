@@ -28,11 +28,13 @@ export interface CrmState {
 
 export function loadCrmState(): CrmState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed.customers && parsed.deals && parsed.tasks) {
-        return parsed;
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.customers && parsed.deals && parsed.tasks) {
+          return parsed;
+        }
       }
     }
   } catch (err) {
@@ -51,6 +53,7 @@ export function loadCrmState(): CrmState {
 
 export function saveCrmState(state: CrmState): void {
   try {
+    if (typeof localStorage === 'undefined') return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (err) {
     console.warn('Failed to save CRM state to localStorage:', err);

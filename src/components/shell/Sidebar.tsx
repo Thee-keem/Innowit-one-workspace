@@ -94,6 +94,7 @@ export const NAVIGATION_SECTIONS: NavSection[] = [
     items: [
       { id: 'system-audit', label: 'System Audit Trail', href: '/system/audit-logs', icon: Shield, module: 'SYSTEM_ADMIN' },
       { id: 'rbac-matrix', label: '12-Role RBAC Matrix', href: '/system/rbac', icon: ShieldCheck, module: 'SYSTEM_ADMIN' },
+      { id: 'system-hardening', label: 'Acceptance & Hardening', href: '/system/hardening', icon: Lock, module: 'SYSTEM_ADMIN' },
     ],
   },
 ];

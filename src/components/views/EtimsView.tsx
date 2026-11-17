@@ -54,6 +54,7 @@ interface EtimsViewProps {
   invoices: InvoiceRecord[];
   products: ProductRecord[];
   isSandbox: boolean;
+  userId?: string;
   userRole: UserRole;
   userFullName: string;
   currentPath?: string;
@@ -79,6 +80,7 @@ export function EtimsView({
   invoices,
   products,
   isSandbox,
+  userId = 'usr_super_01',
   userRole,
   userFullName,
   currentPath = '/etims/queue',
@@ -1215,6 +1217,10 @@ export function EtimsView({
         isOpen={isProductionSwitchOpen}
         onClose={() => setIsProductionSwitchOpen(false)}
         onConfirmSwitch={onToggleSandbox}
+        userId={userId}
+        userFullName={userFullName}
+        userRole={userRole}
+        taxpayerPin={config.kraPin}
       />
 
       {/* MODAL 4: QR CODE DETAIL */}

@@ -58,7 +58,8 @@ export interface ErpState {
 
 export function loadErpState(): ErpState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (
@@ -69,6 +70,7 @@ export function loadErpState(): ErpState {
       ) {
         return parsed;
       }
+    }
     }
   } catch (err) {
     console.warn('Failed to load ERP state from localStorage:', err);
@@ -96,6 +98,7 @@ export function loadErpState(): ErpState {
 
 export function saveErpState(state: ErpState): void {
   try {
+    if (typeof localStorage === 'undefined') return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (err) {
     console.warn('Failed to save ERP state to localStorage:', err);

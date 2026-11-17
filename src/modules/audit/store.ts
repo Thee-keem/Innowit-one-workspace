@@ -176,6 +176,9 @@ export const SEED_AUDIT_LOGS: AuditLogRecord[] = [
 
 export function loadAuditLogs(): AuditLogRecord[] {
   try {
+    if (typeof localStorage === 'undefined') {
+      return SEED_AUDIT_LOGS;
+    }
     const raw = localStorage.getItem(AUDIT_STORAGE_KEY);
     if (!raw) {
       saveAuditLogs(SEED_AUDIT_LOGS);
@@ -189,6 +192,7 @@ export function loadAuditLogs(): AuditLogRecord[] {
 
 export function saveAuditLogs(logs: AuditLogRecord[]): void {
   try {
+    if (typeof localStorage === 'undefined') return;
     localStorage.setItem(AUDIT_STORAGE_KEY, JSON.stringify(logs));
   } catch (err) {
     console.error('Failed to save audit logs to localStorage:', err);

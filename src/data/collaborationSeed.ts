@@ -331,7 +331,7 @@ export const SEED_SHARED_NOTES: SharedNoteRecord[] = [
     authorRole: 'SALES_MANAGER',
     updatedAt: '2026-11-10 16:30',
     linkedEntityType: 'CUSTOMER',
-    linkedEntityId: 'cust_01',
+    linkedEntityId: 'cust_safaricom',
     linkedEntityName: 'Safaricom Enterprise PLC',
     isPinned: true,
     content: `## 1. Executive Context

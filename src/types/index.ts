@@ -847,8 +847,11 @@ export interface AuditLogRecord {
     | 'CreditNote'
     | 'AutomationRule'
     | 'EtimsConfiguration'
+    | 'EtimsQueueItem'
+    | 'EtimsOutboxBatch'
     | 'FixedAsset'
-    | 'Account';
+    | 'Account'
+    | 'SystemSeed';
   entityId: string;
   entityName?: string;
   changesJson?: string; // stringified { before?: Record<string, any>; after?: Record<string, any>; reason?: string }

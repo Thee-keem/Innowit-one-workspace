@@ -226,6 +226,7 @@ export const SEED_NOTIFICATIONS: SystemNotification[] = [
 
 export function loadAutomationRules(): AutomationRule[] {
   try {
+    if (typeof localStorage === 'undefined') return DEFAULT_AUTOMATION_RULES;
     const raw = localStorage.getItem(RULES_STORAGE_KEY);
     if (!raw) {
       saveAutomationRules(DEFAULT_AUTOMATION_RULES);
@@ -239,6 +240,7 @@ export function loadAutomationRules(): AutomationRule[] {
 
 export function saveAutomationRules(rules: AutomationRule[]): void {
   try {
+    if (typeof localStorage === 'undefined') return;
     localStorage.setItem(RULES_STORAGE_KEY, JSON.stringify(rules));
   } catch (err) {
     console.error('Failed to save automation rules:', err);
@@ -247,6 +249,7 @@ export function saveAutomationRules(rules: AutomationRule[]): void {
 
 export function loadAutomationLogs(): AutomationExecutionLog[] {
   try {
+    if (typeof localStorage === 'undefined') return SEED_AUTOMATION_LOGS;
     const raw = localStorage.getItem(LOGS_STORAGE_KEY);
     if (!raw) {
       saveAutomationLogs(SEED_AUTOMATION_LOGS);
@@ -260,6 +263,7 @@ export function loadAutomationLogs(): AutomationExecutionLog[] {
 
 export function saveAutomationLogs(logs: AutomationExecutionLog[]): void {
   try {
+    if (typeof localStorage === 'undefined') return;
     localStorage.setItem(LOGS_STORAGE_KEY, JSON.stringify(logs));
   } catch (err) {
     console.error('Failed to save automation logs:', err);
@@ -268,6 +272,7 @@ export function saveAutomationLogs(logs: AutomationExecutionLog[]): void {
 
 export function loadNotifications(): SystemNotification[] {
   try {
+    if (typeof localStorage === 'undefined') return SEED_NOTIFICATIONS;
     const raw = localStorage.getItem(NOTIFICATIONS_STORAGE_KEY);
     if (!raw) {
       saveNotifications(SEED_NOTIFICATIONS);
@@ -281,6 +286,7 @@ export function loadNotifications(): SystemNotification[] {
 
 export function saveNotifications(notifs: SystemNotification[]): void {
   try {
+    if (typeof localStorage === 'undefined') return;
     localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(notifs));
   } catch (err) {
     console.error('Failed to save notifications:', err);

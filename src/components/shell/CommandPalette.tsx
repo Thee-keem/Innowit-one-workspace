@@ -215,6 +215,18 @@ export function CommandPalette({
         },
       },
       {
+        id: 'nav_hardening',
+        label: 'Production Hardening & Acceptance Gates',
+        sublabel: '/system/hardening · 5 Mandatory Gates, eTIMS Air-Gap, Demo Reset',
+        category: 'NAVIGATION',
+        icon: Shield,
+        keywords: 'phase 8 acceptance gates hardening test airgap seed reset demo',
+        action: () => {
+          onClose();
+          onNavigate('/system/hardening');
+        },
+      },
+      {
         id: 'nav_coa',
         label: 'Chart of Accounts (General Ledger)',
         sublabel: '/accounting/chart-of-accounts · Assets, liabilities, equity, P&L',

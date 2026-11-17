@@ -25,11 +25,24 @@ export const KRA_ENDPOINTS = {
 
 const AIRGAP_STORAGE_KEY = 'innowit_etims_airgap_v1';
 
+function hasStorage(): boolean {
+  return typeof localStorage !== 'undefined';
+}
+
+export function isAppProductionEnv(): boolean {
+  if (typeof process !== 'undefined' && process.env && process.env.APP_ENV) {
+    return process.env.APP_ENV === 'production';
+  }
+  return false;
+}
+
 export function loadAirGapStatus(): AirGapSecurityStatus {
   try {
-    const raw = localStorage.getItem(AIRGAP_STORAGE_KEY);
-    if (raw) {
-      return JSON.parse(raw);
+    if (hasStorage()) {
+      const raw = localStorage.getItem(AIRGAP_STORAGE_KEY);
+      if (raw) {
+        return JSON.parse(raw);
+      }
     }
   } catch (err) {
     console.warn('Failed to load air-gap security state:', err);
@@ -47,7 +60,9 @@ export function loadAirGapStatus(): AirGapSecurityStatus {
 
 export function saveAirGapStatus(status: AirGapSecurityStatus): void {
   try {
-    localStorage.setItem(AIRGAP_STORAGE_KEY, JSON.stringify(status));
+    if (hasStorage()) {
+      localStorage.setItem(AIRGAP_STORAGE_KEY, JSON.stringify(status));
+    }
   } catch (err) {
     console.error('Failed to save air-gap status:', err);
   }
@@ -55,13 +70,28 @@ export function saveAirGapStatus(status: AirGapSecurityStatus): void {
 
 /**
  * Validates whether an outbound transmission is permitted.
- * If in Sandbox, any production URL attempt is strictly BLOCKED.
+ * If in Sandbox or APP_ENV != 'production' without dual-step Super Admin certification,
+ * any production URL attempt is strictly BLOCKED.
  */
 export function validateOutboundTransmission(
   targetUrl: string,
-  isSandbox: boolean
+  isSandbox: boolean,
+  appEnvOverride?: string
 ): { allowed: boolean; reason: string; endpoint: string } {
-  // Rule 1: In Sandbox, live production endpoint is completely forbidden
+  const effectiveAppEnv =
+    appEnvOverride ??
+    (typeof process !== 'undefined' && process.env ? process.env.APP_ENV : undefined);
+
+  // Rule 1: Explicit APP_ENV != 'production' check blocks all production KRA endpoints
+  if (effectiveAppEnv && effectiveAppEnv !== 'production' && targetUrl === KRA_ENDPOINTS.PRODUCTION) {
+    return {
+      allowed: false,
+      reason: `AIR-GAP ENVIRONMENT LOCK: APP_ENV="${effectiveAppEnv}" prohibits outbound network traffic to Live KRA Production endpoints.`,
+      endpoint: KRA_ENDPOINTS.SANDBOX,
+    };
+  }
+
+  // Rule 2: In Sandbox, live production endpoint is completely forbidden
   if (isSandbox) {
     if (targetUrl === KRA_ENDPOINTS.PRODUCTION) {
       return {
@@ -77,7 +107,7 @@ export function validateOutboundTransmission(
     };
   }
 
-  // Rule 2: If in Production, ensure explicit airgap status is certified
+  // Rule 3: If in Production, ensure explicit airgap status is certified
   const airgap = loadAirGapStatus();
   if (!airgap.superAdminCertified || !airgap.productionTrafficAllowed) {
     return {
